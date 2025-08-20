@@ -318,7 +318,7 @@ const CashRegister = () => {
               </div>
               <div className="p-4 rounded-lg bg-white/5">
                 <p className="text-white/70 text-sm">Ticket Médio</p>
-                <p className="text-2xl font-bold text-purple-400">
+                <p className="text-2xl font-bold text-slate-400">
                   R$ {todaySales.length > 0 ? (salesSummary.total / todaySales.length).toFixed(2) : '0.00'}
                 </p>
               </div>

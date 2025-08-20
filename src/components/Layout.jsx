@@ -13,6 +13,7 @@ import {
   ChefHat
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { UserButton } from '@clerk/clerk-react';
 
 const Sidebar = ({ navigation, location, onLinkClick }) => (
   <div className="flex flex-col h-full">
@@ -57,7 +58,7 @@ const Layout = ({ children }) => {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-slate-900 to-black">
       <div className="hidden lg:flex lg:w-72 lg:flex-col lg:fixed lg:inset-y-0">
         <div className="bg-white/10 backdrop-blur-xl border-r border-white/20 h-full">
           <Sidebar navigation={navigation} location={location} />
@@ -96,20 +97,23 @@ const Layout = ({ children }) => {
       </AnimatePresence>
 
       <div className="lg:pl-72">
-        <div className="sticky top-0 z-30 flex items-center h-16 px-4 sm:px-6 lg:px-8 bg-white/10 backdrop-blur-xl border-b border-white/20">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="lg:hidden text-white mr-4"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <Menu className="h-6 w-6" />
-          </Button>
-          <div className="flex-1">
-            <h2 className="text-lg font-semibold text-white">
-              {navigation.find(item => item.href === location.pathname)?.name || 'Dashboard'}
-            </h2>
+        <div className="sticky top-0 z-30 flex items-center justify-between h-16 px-4 sm:px-6 lg:px-8 bg-white/10 backdrop-blur-xl border-b border-white/20">
+          <div className="flex items-center">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lg:hidden text-white mr-4"
+              onClick={() => setSidebarOpen(true)}
+            >
+              <Menu className="h-6 w-6" />
+            </Button>
+            <div className="flex-1">
+              <h2 className="text-lg font-semibold text-white">
+                {navigation.find(item => item.href === location.pathname)?.name || 'Dashboard'}
+              </h2>
+            </div>
           </div>
+          <UserButton />
         </div>
         <main className="p-4 sm:p-6 lg:p-8">
           {children}

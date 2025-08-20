@@ -223,7 +223,7 @@ const Products = () => {
                     className="w-full h-32 object-cover rounded-lg mb-3"
                   />
                 ) : (
-                  <div className="w-full h-32 bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-lg mb-3 flex items-center justify-center">
+                  <div className="w-full h-32 bg-gradient-to-br from-slate-500/20 to-gray-500/20 rounded-lg mb-3 flex items-center justify-center">
                     <span className="text-4xl">🌭</span>
                   </div>
                 )}

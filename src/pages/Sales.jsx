@@ -183,7 +183,7 @@ const Sales = () => {
                         className="w-16 h-16 object-cover rounded-lg"
                       />
                     ) : (
-                      <div className="w-16 h-16 bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-lg flex items-center justify-center">
+                      <div className="w-16 h-16 bg-gradient-to-br from-slate-500/20 to-gray-500/20 rounded-lg flex items-center justify-center">
                         <span className="text-2xl">🌭</span>
                       </div>
                     )}
