@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Plus, Minus, ShoppingCart, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,10 +13,16 @@ import { api } from "../../convex/_generated/api";
 import { useUser } from "@clerk/clerk-react";
 
 const Sales = () => {
+  console.log('🏁 Componente Sales carregando...');
+  
   const { user } = useUser();
   const products = useQuery(api.products.listActive) || [];
   const users = useQuery(api.users.listActive) || [];
   const createSale = useMutation(api.sales.create);
+  const createOrUpdateUser = useMutation(api.users.createOrUpdateFromClerk);
+  
+  console.log('📦 Produtos carregados:', products);
+  console.log('👤 Usuários carregados:', users);
 
   const [currentOrder, setCurrentOrder] = useState([]);
   const [tableNumber, setTableNumber] = useState('');
@@ -27,6 +33,61 @@ const Sales = () => {
 
   // Encontrar o usuário atual no banco
   const currentUser = users.find(u => u.clerkId === user?.id);
+  
+  // Debug: verificar dados de autenticação
+  console.log('🔐 Dados de autenticação:');
+  console.log('  - Clerk user:', user);
+  console.log('  - Clerk user ID:', user?.id);
+  console.log('  - Users do banco:', users);
+  console.log('  - Current user encontrado:', currentUser);
+  
+  // Criar usuário automaticamente se não existir
+  useEffect(() => {
+    if (user && !currentUser && users.length >= 0) {
+      console.log('🆕 Criando usuário automaticamente...');
+      createOrUpdateUser({
+        clerkId: user.id,
+        email: user.primaryEmailAddress?.emailAddress || '',
+        fullName: user.fullName || user.firstName || user.lastName || '',
+        role: 'vendedor'
+      }).then(() => {
+        console.log('✅ Usuário criado com sucesso!');
+        toast({
+          title: "Usuário criado!",
+          description: "Seu usuário foi criado automaticamente no sistema."
+        });
+      }).catch((error) => {
+        console.error('❌ Erro ao criar usuário:', error);
+        toast({
+          title: "Erro",
+          description: "Erro ao criar usuário. Tente novamente.",
+          variant: "destructive"
+        });
+      });
+    }
+  }, [user, currentUser, users, createOrUpdateUser]);
+
+  // Debug: monitorar mudanças no currentOrder
+  useEffect(() => {
+    console.log('🔄 currentOrder mudou:', currentOrder);
+  }, [currentOrder]);
+
+  // Debug: monitorar mudanças no selectedProduct
+  useEffect(() => {
+    console.log('🔄 selectedProduct mudou:', selectedProduct);
+  }, [selectedProduct]);
+
+  // Debug: mostrar informações do pedido
+  useEffect(() => {
+    console.log('📊 Estado atual do pedido:');
+    console.log('  - Número de itens:', currentOrder.length);
+    console.log('  - Itens:', currentOrder);
+    console.log('  - Modal aberto:', isOrderDialogOpen);
+    console.log('  - Produto selecionado:', selectedProduct);
+    console.log('  - Notas:', itemNotes);
+    console.log('  - Tipo de currentOrder:', Array.isArray(currentOrder) ? 'Array' : typeof currentOrder);
+    console.log('  - Conteúdo do currentOrder:', JSON.stringify(currentOrder, null, 2));
+  }, [currentOrder, isOrderDialogOpen, selectedProduct, itemNotes]);
 
   const addToOrder = (product) => {
     setSelectedProduct(product);
@@ -34,28 +95,55 @@ const Sales = () => {
   };
 
   const confirmAddToOrder = () => {
-    if (!selectedProduct) return;
+    console.log('✅ Confirmando adição do produto:', selectedProduct);
+    console.log('✅ Estado atual:');
+    console.log('  - selectedProduct:', selectedProduct);
+    console.log('  - itemNotes:', itemNotes);
+    console.log('  - currentOrder antes:', currentOrder);
+    
+    if (!selectedProduct) {
+      console.log('❌ selectedProduct é null/undefined');
+      return;
+    }
 
     const existingItem = currentOrder.find(item => 
       item.id === selectedProduct._id && item.notes === itemNotes
     );
 
+    console.log('🔍 Item existente encontrado:', existingItem);
+    console.log('📝 Notas do item:', itemNotes);
+    console.log('🔍 Buscando por:', { id: selectedProduct._id, notes: itemNotes });
+    console.log('🔍 Itens no pedido:', currentOrder.map(item => ({ id: item.id, notes: item.notes })));
+
     if (existingItem) {
-      setCurrentOrder(currentOrder.map(item =>
-        item.id === selectedProduct._id && item.notes === itemNotes
-          ? { ...item, quantity: item.quantity + 1 }
-          : item
-      ));
+      console.log('🔄 Atualizando quantidade do item existente');
+      setCurrentOrder(prevOrder => {
+        const newOrder = prevOrder.map(item =>
+          item.id === selectedProduct._id && item.notes === itemNotes
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        );
+        console.log('🔄 Pedido atualizado (quantidade):', newOrder);
+        return newOrder;
+      });
     } else {
-      setCurrentOrder([...currentOrder, {
+      console.log('➕ Adicionando novo item ao pedido');
+      const newItem = {
         ...selectedProduct,
         id: selectedProduct._id,
         quantity: 1,
         notes: itemNotes,
         itemId: Date.now()
-      }]);
+      };
+      console.log('🆕 Novo item:', newItem);
+      setCurrentOrder(prevOrder => {
+        const newOrder = [...prevOrder, newItem];
+        console.log('📋 Pedido atualizado (novo item):', newOrder);
+        return newOrder;
+      });
     }
 
+    console.log('✅ Fechando modal e limpando estado');
     setIsOrderDialogOpen(false);
     setItemNotes('');
     setSelectedProduct(null);
@@ -67,17 +155,19 @@ const Sales = () => {
   };
 
   const updateQuantity = (itemId, change) => {
-    setCurrentOrder(currentOrder.map(item => {
-      if (item.itemId === itemId) {
-        const newQuantity = item.quantity + change;
-        return newQuantity > 0 ? { ...item, quantity: newQuantity } : null;
-      }
-      return item;
-    }).filter(Boolean));
+    setCurrentOrder(prevOrder => 
+      prevOrder.map(item => {
+        if (item.itemId === itemId) {
+          const newQuantity = item.quantity + change;
+          return newQuantity > 0 ? { ...item, quantity: newQuantity } : null;
+        }
+        return item;
+      }).filter(Boolean)
+    );
   };
 
   const removeFromOrder = (itemId) => {
-    setCurrentOrder(currentOrder.filter(item => item.itemId !== itemId));
+    setCurrentOrder(prevOrder => prevOrder.filter(item => item.itemId !== itemId));
   };
 
   const getTotalOrder = () => {
@@ -197,14 +287,39 @@ const Sales = () => {
                       </div>
                     </div>
                     
-                    <Button
-                      onClick={() => addToOrder(product)}
-                      className="btn-gradient"
-                      size="sm"
-                      disabled={product.stock === 0}
+                    <div
+                      onClick={() => {
+                        console.log('🖱️ CLIQUE DETECTADO no div +');
+                        console.log('🖱️ Produto clicado:', product);
+                        
+                        // Teste direto - sem função
+                        console.log('🧪 TESTE DIRETO - setSelectedProduct');
+                        setSelectedProduct(product);
+                        console.log('🧪 TESTE DIRETO - setIsOrderDialogOpen');
+                        setIsOrderDialogOpen(true);
+                        
+                        // Verificar se o estado foi atualizado
+                        setTimeout(() => {
+                          console.log('🧪 VERIFICAÇÃO - selectedProduct:', selectedProduct);
+                          console.log('🧪 VERIFICAÇÃO - isOrderDialogOpen:', isOrderDialogOpen);
+                        }, 100);
+                      }}
+                      style={{ 
+                        padding: '8px 12px', 
+                        background: '#3b82f6', 
+                        color: 'white', 
+                        border: 'none', 
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        fontSize: '14px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        userSelect: 'none'
+                      }}
                     >
                       <Plus className="h-4 w-4" />
-                    </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -240,6 +355,11 @@ const Sales = () => {
               <CardTitle className="text-white flex items-center">
                 <ShoppingCart className="h-5 w-5 mr-2" />
                 Pedido Atual
+                {currentOrder.length > 0 && (
+                  <span className="ml-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full">
+                    {currentOrder.length} item{currentOrder.length !== 1 ? 's' : ''}
+                  </span>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -255,6 +375,11 @@ const Sales = () => {
               </div>
 
               <div className="space-y-3 max-h-60 overflow-y-auto scrollbar-hide">
+                {/* Debug: mostrar informações do pedido */}
+                <div className="p-2 bg-blue-500/20 rounded text-xs text-blue-300">
+                  Debug: {currentOrder.length} itens no pedido
+                </div>
+                
                 {currentOrder.map((item) => (
                   <div key={item.itemId} className="p-3 rounded-lg bg-white/5 border border-white/10">
                     <div className="flex justify-between items-start mb-2">

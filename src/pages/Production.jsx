@@ -6,6 +6,8 @@ import { Search, Hourglass, UtensilsCrossed, Bell, CheckCircle2, AlertTriangle, 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
 
 const statusConfig = {
   Pendente: {
@@ -59,7 +61,9 @@ const ProductionItem = ({ item, onStatusChange }) => {
       <div className="flex justify-between items-start">
         <div className="flex-1">
           <p className="font-bold text-white">{item.quantity}x {item.name}</p>
-          {item.notes && <p className="text-sm text-white/60">Obs: {item.notes}</p>}
+          {item.notes && item.notes !== item.name && (
+            <p className="text-sm text-white/60">{item.notes}</p>
+          )}
         </div>
         <div className={`flex items-center space-x-2 text-sm font-semibold px-3 py-1 rounded-full ${currentStatusInfo.color}`}>
           <currentStatusInfo.icon className="h-4 w-4" />
@@ -80,64 +84,52 @@ const ProductionItem = ({ item, onStatusChange }) => {
 };
 
 const Production = () => {
-  const [orders, setOrders] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
 
-  useEffect(() => {
-    const fetchOrders = () => {
-      const savedOrders = JSON.parse(localStorage.getItem('orders') || '[]');
-      const productionOrders = savedOrders
-        .map(order => ({
-          ...order,
-          items: order.items.map(item => ({ ...item, status: item.status || 'Pendente' }))
-        }))
-        .filter(order => order.items.some(item => item.status !== 'Entregue'));
+  // Buscar dados do Convex
+  const sales = useQuery(api.sales.listAll) || [];
+  const updateSaleStatus = useMutation(api.sales.updateStatus);
+
+  // Converter vendas para pedidos de produção
+  const orders = sales
+    .filter(sale => sale.status === 'pendente')
+    .map(sale => ({
+      ...sale,
+      // Por enquanto, criar um item por venda
+      // TODO: Implementar busca de itens reais da tabela saleItems
+      items: [{
+        _id: sale._id,
+        name: sale.notes ? sale.notes.replace('Mesa: ', '') : `Pedido ${sale._id.slice(-6)}`,
+        quantity: 1,
+        status: 'Pendente',
+        notes: sale.notes || '',
+        itemId: sale._id
+      }]
+    }))
+    .filter(order => order.items.some(item => item.status !== 'Entregue'));
+
+  const handleStatusChange = async (itemId, newStatus) => {
+    try {
+      // Atualizar status da venda no Convex
+      await updateSaleStatus({ id: itemId, status: newStatus });
       
-      setOrders(productionOrders);
-    };
-
-    fetchOrders();
-    const interval = setInterval(fetchOrders, 5000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleStatusChange = (itemId, newStatus) => {
-    const allOrders = JSON.parse(localStorage.getItem('orders') || '[]');
-    let updated = false;
-
-    const newAllOrders = allOrders.map(order => {
-      const itemIndex = order.items.findIndex(item => item.itemId === itemId);
-      if (itemIndex > -1) {
-        order.items[itemIndex].status = newStatus;
-        updated = true;
-      }
-      return order;
-    });
-
-    if (updated) {
-      localStorage.setItem('orders', JSON.stringify(newAllOrders));
-      setOrders(prevOrders => {
-        const updatedOrders = prevOrders
-          .map(order => ({
-            ...order,
-            items: order.items.map(item =>
-              item.itemId === itemId ? { ...item, status: newStatus } : item
-            )
-          }))
-          .filter(order => order.items.some(item => item.status !== 'Entregue'));
-        return updatedOrders;
-      });
-
       toast({
-        title: "Status Atualizado!",
-        description: `Item movido para "${newStatus}".`
+        title: "Status atualizado",
+        description: `Item movido para ${newStatus}`,
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar status:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao atualizar status do item",
+        variant: "destructive"
       });
     }
   };
 
   const filteredOrders = orders.filter(order =>
-    order.tableNumber.toLowerCase().includes(searchTerm.toLowerCase())
+    (order.tableNumber || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -162,21 +154,22 @@ const Production = () => {
         </div>
       </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
         {filteredOrders.length > 0 ? (
           filteredOrders.map((order, index) => (
             <motion.div
-              key={order.id}
+              key={order._id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
+              className="w-full"
             >
               <Card className="glass-effect border-white/20 h-full flex flex-col">
-                <CardHeader>
-                  <CardTitle className="text-white flex justify-between items-center">
-                    <span>{order.tableNumber}</span>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <span className="text-lg">{order.notes ? order.notes.replace('Mesa: ', '') : 'Pedido'}</span>
                     <span className="text-sm text-white/70">
-                      {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {order.createdAt ? new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
                     </span>
                   </CardTitle>
                 </CardHeader>

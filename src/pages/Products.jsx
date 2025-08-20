@@ -8,9 +8,17 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/use-toast';
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import { useUser } from "@clerk/clerk-react";
 
 const Products = () => {
-  const [products, setProducts] = useState([]);
+  const { user } = useUser();
+  const products = useQuery(api.products.listActive) || [];
+  const createProduct = useMutation(api.products.create);
+  const updateProduct = useMutation(api.products.update);
+  const deleteProduct = useMutation(api.products.removeProduct);
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState(null);
@@ -21,17 +29,7 @@ const Products = () => {
     image: ''
   });
 
-  useEffect(() => {
-    const savedProducts = JSON.parse(localStorage.getItem('products') || '[]');
-    setProducts(savedProducts);
-  }, []);
-
-  const saveProducts = (newProducts) => {
-    localStorage.setItem('products', JSON.stringify(newProducts));
-    setProducts(newProducts);
-  };
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!formData.name || !formData.price) {
@@ -43,34 +41,48 @@ const Products = () => {
       return;
     }
 
-    const productData = {
-      id: editingProduct ? editingProduct.id : Date.now(),
-      name: formData.name,
-      price: parseFloat(formData.price),
-      description: formData.description,
-      image: formData.image,
-      createdAt: editingProduct ? editingProduct.createdAt : new Date().toISOString()
-    };
+    try {
+      if (editingProduct) {
+        // Atualizar produto existente
+        await updateProduct({
+          id: editingProduct._id,
+          name: formData.name,
+          price: parseFloat(formData.price),
+          description: formData.description,
+          image: formData.image
+        });
+        
+        toast({
+          title: "Sucesso!",
+          description: "Produto atualizado com sucesso!"
+        });
+      } else {
+        // Criar novo produto
+        await createProduct({
+          name: formData.name,
+          price: parseFloat(formData.price),
+          description: formData.description,
+          image: formData.image
+        });
+        
+        toast({
+          title: "Sucesso!",
+          description: "Produto cadastrado com sucesso!"
+        });
+      }
 
-    let newProducts;
-    if (editingProduct) {
-      newProducts = products.map(p => p.id === editingProduct.id ? productData : p);
+      setIsDialogOpen(false);
+      setEditingProduct(null);
+      setFormData({ name: '', price: '', description: '', image: '' });
+      
+    } catch (error) {
+      console.error('Erro ao salvar produto:', error);
       toast({
-        title: "Sucesso!",
-        description: "Produto atualizado com sucesso!"
-      });
-    } else {
-      newProducts = [...products, productData];
-      toast({
-        title: "Sucesso!",
-        description: "Produto cadastrado com sucesso!"
+        title: "Erro",
+        description: "Erro ao salvar produto. Tente novamente.",
+        variant: "destructive"
       });
     }
-
-    saveProducts(newProducts);
-    setIsDialogOpen(false);
-    setEditingProduct(null);
-    setFormData({ name: '', price: '', description: '', image: '' });
   };
 
   const handleEdit = (product) => {
@@ -78,19 +90,27 @@ const Products = () => {
     setFormData({
       name: product.name,
       price: product.price.toString(),
-      description: product.description,
-      image: product.image
+      description: product.description || '',
+      image: product.image || ''
     });
     setIsDialogOpen(true);
   };
 
-  const handleDelete = (id) => {
-    const newProducts = products.filter(p => p.id !== id);
-    saveProducts(newProducts);
-    toast({
-      title: "Produto removido",
-      description: "Produto excluído com sucesso!"
-    });
+  const handleDelete = async (id) => {
+    try {
+      await deleteProduct({ id });
+      toast({
+        title: "Produto removido",
+        description: "Produto excluído com sucesso!"
+      });
+    } catch (error) {
+      console.error('Erro ao deletar produto:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao deletar produto. Tente novamente.",
+        variant: "destructive"
+      });
+    }
   };
 
   const filteredProducts = products.filter(product =>
@@ -209,7 +229,7 @@ const Products = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredProducts.map((product, index) => (
           <motion.div
-            key={product.id}
+            key={product._id}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
@@ -255,7 +275,7 @@ const Products = () => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleDelete(product.id)}
+                      onClick={() => handleDelete(product._id)}
                       className="border-red-500/50 text-red-400 hover:bg-red-500/10"
                     >
                       <Trash2 className="h-4 w-4" />

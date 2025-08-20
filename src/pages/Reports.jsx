@@ -9,11 +9,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import { useToast } from '@/components/ui/use-toast';
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
 
 const Reports = () => {
-  const [sales, setSales] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [cashRegisterHistory, setCashRegisterHistory] = useState([]);
   const [dateFilter, setDateFilter] = useState({
     start: '',
     end: ''
@@ -24,23 +24,14 @@ const Reports = () => {
     cashRegister: []
   });
 
-  useEffect(() => {
-    loadData();
-  }, []);
+  // Buscar dados do Convex
+  const sales = useQuery(api.sales.listAll) || [];
+  const products = useQuery(api.products.listActive) || [];
+  const cashRegisterHistory = useQuery(api.cashRegister.listAll) || [];
 
   useEffect(() => {
     filterData();
-  }, [sales, dateFilter]);
-
-  const loadData = () => {
-    const salesData = JSON.parse(localStorage.getItem('sales') || '[]');
-    const productsData = JSON.parse(localStorage.getItem('products') || '[]');
-    const cashData = JSON.parse(localStorage.getItem('cashRegisterHistory') || '[]');
-    
-    setSales(salesData);
-    setProducts(productsData);
-    setCashRegisterHistory(cashData);
-  };
+  }, [sales, products, cashRegisterHistory, dateFilter]);
 
   const filterData = () => {
     let filtered = sales;
@@ -51,7 +42,7 @@ const Reports = () => {
       endDate.setHours(23, 59, 59, 999);
 
       filtered = sales.filter(sale => {
-        const saleDate = new Date(sale.date);
+        const saleDate = new Date(sale.saleDate);
         return saleDate >= startDate && saleDate <= endDate;
       });
     }
@@ -66,18 +57,22 @@ const Reports = () => {
   const getSalesByProduct = () => {
     const productSales = {};
     
+    // Como os itens estão em uma tabela separada, vamos usar um placeholder por enquanto
+    // TODO: Implementar busca de itens por venda
     filteredData.sales.forEach(sale => {
-      sale.items.forEach(item => {
-        if (!productSales[item.name]) {
-          productSales[item.name] = {
-            name: item.name,
-            quantity: 0,
-            revenue: 0
-          };
-        }
-        productSales[item.name].quantity += item.quantity;
-        productSales[item.name].revenue += item.price * item.quantity;
-      });
+      // Placeholder - precisa buscar os itens da venda
+      const itemCount = 1; // Simplificado por enquanto
+      const productName = `Venda #${sale._id}`;
+      
+      if (!productSales[productName]) {
+        productSales[productName] = {
+          name: productName,
+          quantity: 0,
+          revenue: 0
+        };
+      }
+      productSales[productName].quantity += itemCount;
+      productSales[productName].revenue += sale.total;
     });
 
     return Object.values(productSales).sort((a, b) => b.revenue - a.revenue);
@@ -92,9 +87,11 @@ const Reports = () => {
     };
 
     filteredData.sales.forEach(sale => {
-      sale.paymentMethods.forEach(payment => {
-        paymentSales[payment.method] += payment.amount;
-      });
+      // No Convex, paymentMethod é uma string, não um array
+      const method = sale.paymentMethod;
+      if (paymentSales.hasOwnProperty(method)) {
+        paymentSales[method] += sale.total;
+      }
     });
 
     return paymentSales;
@@ -104,7 +101,7 @@ const Reports = () => {
     const dailySales = {};
 
     filteredData.sales.forEach(sale => {
-      const day = new Date(sale.date).toDateString();
+      const day = new Date(sale.saleDate).toDateString();
       if (!dailySales[day]) {
         dailySales[day] = {
           date: day,
@@ -123,18 +120,21 @@ const Reports = () => {
     const operatorSales = {};
 
     filteredData.sales.forEach(sale => {
-      if (!operatorSales[sale.operator]) {
-        operatorSales[sale.operator] = {
-          name: sale.operator,
+      // Usar userId em vez de operator
+      const operatorId = sale.userId;
+      if (!operatorSales[operatorId]) {
+        operatorSales[operatorId] = {
+          id: operatorId,
+          name: `Usuário ${operatorId}`, // Placeholder - pode ser melhorado
           sales: 0,
           revenue: 0
         };
       }
-      operatorSales[sale.operator].sales += 1;
-      operatorSales[sale.operator].revenue += sale.total;
+      operatorSales[operatorId].sales += 1;
+      operatorSales[operatorId].revenue += sale.total;
     });
 
-    return Object.values(operatorSales);
+    return Object.values(operatorSales).sort((a, b) => b.revenue - a.revenue);
   };
 
   /**

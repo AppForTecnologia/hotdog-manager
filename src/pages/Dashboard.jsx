@@ -9,6 +9,8 @@ import {
   Clock,
   Users
 } from 'lucide-react';
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
@@ -20,19 +22,50 @@ const Dashboard = () => {
     activeOperators: 1
   });
 
+  // Buscar dados do Convex
+  const sales = useQuery(api.sales.listAll) || [];
+  const products = useQuery(api.products.listActive) || [];
+  const users = useQuery(api.users.listActive) || [];
+
   useEffect(() => {
-    // Dados mockados para evitar erros de localStorage
+    // Usar dados mockados se o Convex não estiver funcionando
     const mockStats = {
-      todaySales: 1250.50,
-      todayOrders: 15,
-      totalProducts: 25,
-      averageTicket: 83.37,
+      todaySales: 850.75,
+      todayOrders: 12,
+      totalProducts: 15,
+      averageTicket: 70.90,
       openOrders: 3,
       activeOperators: 1
     };
-    
-    setStats(mockStats);
-  }, []);
+
+    if (sales && products && users && sales.length > 0) {
+      // Calcular estatísticas reais se os dados estiverem disponíveis
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const todaySales = sales.filter(sale => {
+        const saleDate = new Date(sale.saleDate);
+        return saleDate >= today;
+      });
+      
+      const totalRevenue = todaySales.reduce((sum, sale) => sum + sale.total, 0);
+      const avgTicket = todaySales.length > 0 ? totalRevenue / todaySales.length : 0;
+      
+      const openOrders = sales.filter(sale => sale.status === 'pendente').length;
+      
+      setStats({
+        todaySales: totalRevenue,
+        todayOrders: todaySales.length,
+        totalProducts: products.length,
+        averageTicket: avgTicket,
+        openOrders: openOrders,
+        activeOperators: users.length
+      });
+    } else {
+      // Usar dados mockados temporariamente
+      setStats(mockStats);
+    }
+  }, [sales, products, users]);
 
   const statCards = [
     {

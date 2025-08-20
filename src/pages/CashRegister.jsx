@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/components/ui/use-toast';
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../convex/_generated/api";
 
 const CashRegister = () => {
-  const [todaySales, setTodaySales] = useState([]);
   const [cashCounts, setCashCounts] = useState({
     money: '',
     credit: '',
@@ -30,41 +31,49 @@ const CashRegister = () => {
     total: 0
   });
 
+  // Buscar dados do Convex
+  const sales = useQuery(api.sales.listAll) || [];
+  const cashRegisterHistory = useQuery(api.cashRegister.listAll) || [];
+  const createCashRegisterClose = useMutation(api.cashRegister.create);
+
+  // Calcular vendas de hoje
+  const todaySales = sales.filter(sale => {
+    const today = new Date().toDateString();
+    return new Date(sale.saleDate).toDateString() === today;
+  });
+
   useEffect(() => {
-    loadTodaySales();
-  }, []);
+    if (todaySales.length > 0) {
+      // Calculate sales summary by payment method
+      const summary = {
+        money: 0,
+        credit: 0,
+        debit: 0,
+        pix: 0,
+        total: 0
+      };
+
+      todaySales.forEach(sale => {
+        // No Convex, paymentMethod é uma string, não um array
+        // Vamos simular o array para manter compatibilidade
+        const paymentMethods = [{
+          method: sale.paymentMethod,
+          amount: sale.total
+        }];
+        
+        paymentMethods.forEach(payment => {
+          summary[payment.method] += payment.amount;
+          summary.total += payment.amount;
+        });
+      });
+
+      setSalesSummary(summary);
+    }
+  }, [todaySales]);
 
   useEffect(() => {
     calculateDifferences();
   }, [cashCounts, salesSummary]);
-
-  const loadTodaySales = () => {
-    const sales = JSON.parse(localStorage.getItem('sales') || '[]');
-    const today = new Date().toDateString();
-    const todaysSales = sales.filter(sale => 
-      new Date(sale.date).toDateString() === today
-    );
-
-    setTodaySales(todaysSales);
-
-    // Calculate sales summary by payment method
-    const summary = {
-      money: 0,
-      credit: 0,
-      debit: 0,
-      pix: 0,
-      total: 0
-    };
-
-    todaysSales.forEach(sale => {
-      sale.paymentMethods.forEach(payment => {
-        summary[payment.method] += payment.amount;
-        summary.total += payment.amount;
-      });
-    });
-
-    setSalesSummary(summary);
-  };
 
   const calculateDifferences = () => {
     const newDifferences = {
@@ -104,37 +113,49 @@ const CashRegister = () => {
     }
 
     const closeData = {
-      id: Date.now(),
-      date: new Date().toISOString(),
-      salesSummary,
-      cashCounts: {
-        money: parseFloat(cashCounts.money) || 0,
-        credit: parseFloat(cashCounts.credit) || 0,
-        debit: parseFloat(cashCounts.debit) || 0,
-        pix: parseFloat(cashCounts.pix) || 0
-      },
-      differences,
+      userId: "placeholder_user_id", // TODO: Pegar do usuário logado
+      clerkUserId: "placeholder_clerk_id", // TODO: Pegar do Clerk
+      moneyCount: parseFloat(cashCounts.money) || 0,
+      creditCount: parseFloat(cashCounts.credit) || 0,
+      debitCount: parseFloat(cashCounts.debit) || 0,
+      pixCount: parseFloat(cashCounts.pix) || 0,
+      totalCount: totalCounted,
+      moneySales: salesSummary.money,
+      creditSales: salesSummary.credit,
+      debitSales: salesSummary.debit,
+      pixSales: salesSummary.pix,
       totalSales: salesSummary.total,
-      totalCounted: totalCounted,
-      operator: 'Operador 1'
+      moneyDiff: differences.money,
+      creditDiff: differences.credit,
+      debitDiff: differences.debit,
+      pixDiff: differences.pix,
+      totalDiff: differences.total,
+      notes: `Fechamento de caixa - ${new Date().toLocaleString()}`
     };
 
-    const cashRegisterHistory = JSON.parse(localStorage.getItem('cashRegisterHistory') || '[]');
-    cashRegisterHistory.push(closeData);
-    localStorage.setItem('cashRegisterHistory', JSON.stringify(cashRegisterHistory));
+    try {
+      createCashRegisterClose(closeData);
+      
+      toast({
+        title: "Caixa fechado com sucesso!",
+        description: `Total contado: R$ ${totalCounted.toFixed(2)} | Total vendas: R$ ${salesSummary.total.toFixed(2)}`,
+      });
 
-    toast({
-      title: "Caixa fechado!",
-      description: `Fechamento realizado com ${differences.total >= 0 ? 'sobra' : 'falta'} de R$ ${Math.abs(differences.total).toFixed(2)}.`
-    });
-
-    // Reset form
-    setCashCounts({
-      money: '',
-      credit: '',
-      debit: '',
-      pix: ''
-    });
+      // Limpar campos
+      setCashCounts({
+        money: '',
+        credit: '',
+        debit: '',
+        pix: ''
+      });
+    } catch (error) {
+      console.error('Erro ao fechar caixa:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao fechar o caixa. Tente novamente.",
+        variant: "destructive"
+      });
+    }
   };
 
   const paymentMethods = [

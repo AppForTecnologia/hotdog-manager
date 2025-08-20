@@ -119,39 +119,44 @@ export const create = mutation({
     name: v.string(),
     description: v.optional(v.string()),
     price: v.number(),
-    costPrice: v.optional(v.number()),
-    stock: v.number(),
-    categoryId: v.id("categories"),
-    sku: v.optional(v.string()),
-    imageUrl: v.optional(v.string()),
+    image: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Validações básicas
     if (args.price < 0) {
       throw new Error("Preço não pode ser negativo");
     }
-    
-    if (args.stock < 0) {
-      throw new Error("Estoque não pode ser negativo");
-    }
 
-    // Verificar se SKU já existe (se fornecido)
-    if (args.sku) {
-      const existingProduct = await ctx.db
-        .query("products")
-        .withIndex("by_sku", (q) => q.eq("sku", args.sku))
-        .filter((q) => q.eq(q.field("deletedAt"), undefined))
-        .first();
-      
-      if (existingProduct) {
-        throw new Error("SKU já existe no sistema");
-      }
+    // Buscar ou criar categoria padrão
+    let defaultCategoryId;
+    const existingDefaultCategory = await ctx.db
+      .query("categories")
+      .withIndex("by_name", (q) => q.eq("name", "Geral"))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .first();
+    
+    if (existingDefaultCategory) {
+      defaultCategoryId = existingDefaultCategory._id;
+    } else {
+      // Criar categoria padrão
+      defaultCategoryId = await ctx.db.insert("categories", {
+        name: "Geral",
+        description: "Categoria padrão para produtos",
+        isActive: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
     }
 
     const now = Date.now();
     
     const productId = await ctx.db.insert("products", {
-      ...args,
+      name: args.name,
+      description: args.description || "",
+      price: args.price,
+      imageUrl: args.image || "",
+      stock: 0, // Estoque padrão
+      categoryId: defaultCategoryId,
       isActive: true,
       createdAt: now,
       updatedAt: now,
@@ -171,12 +176,7 @@ export const update = mutation({
     name: v.optional(v.string()),
     description: v.optional(v.string()),
     price: v.optional(v.number()),
-    costPrice: v.optional(v.number()),
-    stock: v.optional(v.number()),
-    categoryId: v.optional(v.id("categories")),
-    sku: v.optional(v.string()),
-    imageUrl: v.optional(v.string()),
-    isActive: v.optional(v.boolean()),
+    image: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { id, ...updates } = args;
@@ -191,34 +191,19 @@ export const update = mutation({
     if (updates.price !== undefined && updates.price < 0) {
       throw new Error("Preço não pode ser negativo");
     }
-    
-    if (updates.stock !== undefined && updates.stock < 0) {
-      throw new Error("Estoque não pode ser negativo");
-    }
 
-    // Verificar se novo SKU já existe (se fornecido)
-    if (updates.sku && updates.sku !== existingProduct.sku) {
-      const duplicateProduct = await ctx.db
-        .query("products")
-        .withIndex("by_sku", (q) => q.eq("sku", updates.sku))
-        .filter((q) => 
-          q.and(
-            q.neq(q.field("_id"), id),
-            q.eq(q.field("deletedAt"), undefined)
-          )
-        )
-        .first();
-      
-      if (duplicateProduct) {
-        throw new Error("SKU já existe no sistema");
-      }
-    }
+    // Preparar campos para atualização
+    const updateFields: any = {
+      updatedAt: Date.now(),
+    };
+
+    if (updates.name !== undefined) updateFields.name = updates.name;
+    if (updates.description !== undefined) updateFields.description = updates.description;
+    if (updates.price !== undefined) updateFields.price = updates.price;
+    if (updates.image !== undefined) updateFields.imageUrl = updates.image;
 
     // Atualizar produto
-    await ctx.db.patch(id, {
-      ...updates,
-      updatedAt: Date.now(),
-    });
+    await ctx.db.patch(id, updateFields);
 
     return id;
   },
@@ -228,7 +213,7 @@ export const update = mutation({
  * Mutation para deletar um produto (soft delete)
  * Marca o produto como deletado sem remover do banco
  */
-export const remove = mutation({
+export const removeProduct = mutation({
   args: { id: v.id("products") },
   handler: async (ctx, args) => {
     const product = await ctx.db.get(args.id);

@@ -176,4 +176,58 @@ export default defineSchema({
     .index("by_date", ["movementDate"])
     .index("by_user", ["userId"])
     .index("by_created_at", ["createdAt"]),
+
+  /**
+   * Tabela de fechamento de caixa
+   * Registra contagens e diferenças ao fechar o caixa
+   */
+  cashRegister: defineTable({
+    // ID do usuário que fechou o caixa
+    userId: v.id("users"),
+    // ID do usuário no Clerk
+    clerkUserId: v.string(),
+    // Contagem de dinheiro
+    moneyCount: v.number(),
+    // Contagem de cartão de crédito
+    creditCount: v.number(),
+    // Contagem de cartão de débito
+    debitCount: v.number(),
+    // Contagem de PIX
+    pixCount: v.number(),
+    // Total contado
+    totalCount: v.number(),
+    // Vendas em dinheiro
+    moneySales: v.number(),
+    // Vendas em crédito
+    creditSales: v.number(),
+    // Vendas em débito
+    debitSales: v.number(),
+    // Vendas em PIX
+    pixSales: v.number(),
+    // Total de vendas
+    totalSales: v.number(),
+    // Diferença em dinheiro
+    moneyDiff: v.number(),
+    // Diferença em crédito
+    creditDiff: v.number(),
+    // Diferença em débito
+    debitDiff: v.number(),
+    // Diferença em PIX
+    pixDiff: v.number(),
+    // Diferença total
+    totalDiff: v.number(),
+    // Observações
+    notes: v.optional(v.string()),
+    // Data de fechamento
+    closeDate: v.number(),
+    // Data de criação
+    createdAt: v.number(),
+    // Data de última atualização
+    updatedAt: v.number(),
+    // Data de exclusão (soft delete)
+    deletedAt: v.optional(v.number()),
+  })
+    .index("by_date", ["closeDate"])
+    .index("by_user", ["userId"])
+    .index("by_created_at", ["createdAt"]),
 });
