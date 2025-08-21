@@ -49,6 +49,104 @@ export const listByCategory = query({
 });
 
 /**
+ * Query para listar produtos agrupados por categoria personalizada
+ * Retorna produtos organizados em grupos configuráveis pelo usuário
+ */
+export const listGroupedByCategory = query({
+  args: {},
+  handler: async (ctx) => {
+    // Buscar grupos de produtos configurados
+    const productGroups = await ctx.db
+      .query("productGroups")
+      .withIndex("by_active", (q) => q.eq("isActive", true))
+      .collect();
+
+    // Se não há grupos configurados, inicializar grupos padrão
+    if (productGroups.length === 0) {
+      return {};
+    }
+
+    // Ordenar grupos por ordem de exibição
+    const sortedGroups = productGroups.sort((a, b) => a.order - b.order);
+
+    // Buscar todas as categorias ativas
+    const categories = await ctx.db
+      .query("categories")
+      .withIndex("by_active", (q) => q.eq("isActive", true))
+      .collect();
+
+    // Criar estrutura de grupos dinâmica
+    const groups: any = {};
+
+    for (const productGroup of sortedGroups) {
+      groups[productGroup.name] = {
+        id: productGroup._id,
+        title: productGroup.title,
+        icon: productGroup.icon,
+        color: productGroup.color,
+        order: productGroup.order,
+        categories: [],
+        products: []
+      };
+
+      // Filtrar categorias que correspondem às palavras-chave do grupo
+      const matchingCategories = categories.filter(cat => {
+        const categoryName = cat.name.toLowerCase();
+        return productGroup.keywords.some(keyword => 
+          categoryName.includes(keyword.toLowerCase())
+        );
+      });
+
+      groups[productGroup.name].categories = matchingCategories;
+    }
+
+    // Se nenhuma categoria foi associada automaticamente, distribuir manualmente
+    const unassignedCategories = categories.filter(cat => {
+      return !Object.values(groups).some((group: any) => 
+        group.categories.some((groupCat: any) => groupCat._id === cat._id)
+      );
+    });
+
+    // Associar categorias não atribuídas ao primeiro grupo disponível
+    if (unassignedCategories.length > 0 && Object.keys(groups).length > 0) {
+      const firstGroupKey = Object.keys(groups)[0];
+      groups[firstGroupKey].categories.push(...unassignedCategories);
+    }
+
+    // Buscar produtos para cada grupo
+    for (const groupKey of Object.keys(groups)) {
+      const group = groups[groupKey];
+      
+      for (const category of group.categories) {
+        const products = await ctx.db
+          .query("products")
+          .withIndex("by_category", (q) => q.eq("categoryId", category._id))
+          .filter((q) => 
+            q.and(
+              q.eq(q.field("isActive"), true),
+              q.eq(q.field("deletedAt"), undefined)
+            )
+          )
+          .collect();
+
+        // Adicionar informações da categoria aos produtos
+        const productsWithCategory = products.map(product => ({
+          ...product,
+          category: category
+        }));
+
+        group.products.push(...productsWithCategory);
+      }
+
+      // Ordenar produtos por nome
+      group.products.sort((a: any, b: any) => a.name.localeCompare(b.name));
+    }
+
+    return groups;
+  },
+});
+
+/**
  * Query para buscar produto por ID
  * Retorna um produto específico com todas as informações
  */
@@ -120,6 +218,7 @@ export const create = mutation({
     description: v.optional(v.string()),
     price: v.number(),
     image: v.optional(v.string()),
+    categoryId: v.id("categories"),
   },
   handler: async (ctx, args) => {
     // Validações básicas
@@ -127,25 +226,15 @@ export const create = mutation({
       throw new Error("Preço não pode ser negativo");
     }
 
-    // Buscar ou criar categoria padrão
-    let defaultCategoryId;
-    const existingDefaultCategory = await ctx.db
-      .query("categories")
-      .withIndex("by_name", (q) => q.eq("name", "Geral"))
-      .filter((q) => q.eq(q.field("isActive"), true))
-      .first();
-    
-    if (existingDefaultCategory) {
-      defaultCategoryId = existingDefaultCategory._id;
-    } else {
-      // Criar categoria padrão
-      defaultCategoryId = await ctx.db.insert("categories", {
-        name: "Geral",
-        description: "Categoria padrão para produtos",
-        isActive: true,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      });
+    // Verificar se categoria foi fornecida
+    if (!args.categoryId) {
+      throw new Error("Categoria é obrigatória");
+    }
+
+    // Verificar se a categoria existe e está ativa
+    const category = await ctx.db.get(args.categoryId);
+    if (!category || !category.isActive) {
+      throw new Error("Categoria inválida ou inativa");
     }
 
     const now = Date.now();
@@ -156,7 +245,7 @@ export const create = mutation({
       price: args.price,
       imageUrl: args.image || "",
       stock: 0, // Estoque padrão
-      categoryId: defaultCategoryId,
+      categoryId: args.categoryId,
       isActive: true,
       createdAt: now,
       updatedAt: now,
@@ -177,6 +266,7 @@ export const update = mutation({
     description: v.optional(v.string()),
     price: v.optional(v.number()),
     image: v.optional(v.string()),
+    categoryId: v.optional(v.id("categories")),
   },
   handler: async (ctx, args) => {
     const { id, ...updates } = args;
@@ -192,6 +282,14 @@ export const update = mutation({
       throw new Error("Preço não pode ser negativo");
     }
 
+    // Validar categoria se fornecida
+    if (updates.categoryId !== undefined) {
+      const category = await ctx.db.get(updates.categoryId);
+      if (!category || !category.isActive) {
+        throw new Error("Categoria inválida ou inativa");
+      }
+    }
+
     // Preparar campos para atualização
     const updateFields: any = {
       updatedAt: Date.now(),
@@ -201,6 +299,7 @@ export const update = mutation({
     if (updates.description !== undefined) updateFields.description = updates.description;
     if (updates.price !== undefined) updateFields.price = updates.price;
     if (updates.image !== undefined) updateFields.imageUrl = updates.image;
+    if (updates.categoryId !== undefined) updateFields.categoryId = updates.categoryId;
 
     // Atualizar produto
     await ctx.db.patch(id, updateFields);

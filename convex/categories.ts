@@ -220,6 +220,8 @@ export const remove = mutation({
   },
 });
 
+
+
 /**
  * Query para buscar categorias por termo de busca
  * Útil para autocomplete e busca de categorias

@@ -1,187 +1,180 @@
+import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 
 /**
- * Função para popular o banco de dados com dados iniciais
- * Útil para desenvolvimento e demonstração
+ * Função para popular o banco de dados com dados de exemplo
+ * Inclui categorias, produtos, usuários e vendas de teste
  */
-
-export const seedDatabase = mutation({
+export const seed = mutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
 
-    // Criar categorias padrão
-    const categories = await Promise.all([
-      ctx.db.insert("categories", {
-        name: "Lanches",
-        description: "Hambúrgueres, cachorros-quentes e sanduíches",
-        color: "#FF6B6B",
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      }),
-      ctx.db.insert("categories", {
-        name: "Bebidas",
-        description: "Refrigerantes, sucos e água",
-        color: "#4ECDC4",
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      }),
-      ctx.db.insert("categories", {
-        name: "Acompanhamentos",
-        description: "Batatas, saladas e outros acompanhamentos",
-        color: "#45B7D1",
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      }),
-      ctx.db.insert("categories", {
-        name: "Sobremesas",
-        description: "Doces, sorvetes e sobremesas",
-        color: "#96CEB4",
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      }),
-    ]);
+    // Criar usuário de exemplo
+    const userId = await ctx.db.insert("users", {
+      clerkId: "user_test_123",
+      email: "teste@hotdog.com",
+      fullName: "Usuário Teste",
+      role: "admin",
+      createdAt: now,
+      updatedAt: now,
+      isActive: true,
+    });
 
-    // Criar produtos de exemplo
-    const products = await Promise.all([
-      // Lanches
-      ctx.db.insert("products", {
-        name: "Cachorro-Quente Clássico",
-        description: "Pão, salsicha, mostarda, ketchup e cebola",
-        price: 8.50,
-        costPrice: 4.00,
-        stock: 50,
-        categoryId: categories[0], // Lanches
-        sku: "CQ001",
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      }),
-      ctx.db.insert("products", {
-        name: "Hambúrguer Simples",
-        description: "Pão, carne, alface, tomate e queijo",
-        price: 12.00,
-        costPrice: 6.00,
-        stock: 30,
-        categoryId: categories[0], // Lanches
-        sku: "HB001",
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      }),
-      ctx.db.insert("products", {
-        name: "X-Bacon",
-        description: "Hambúrguer com bacon, queijo e molho especial",
-        price: 15.50,
-        costPrice: 8.00,
-        stock: 25,
-        categoryId: categories[0], // Lanches
-        sku: "XB001",
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      }),
+    // Criar categorias
+    const lanchesId = await ctx.db.insert("categories", {
+      name: "Lanches",
+      description: "Hot dogs e outros lanches",
+      color: "#FF6B35",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
 
-      // Bebidas
-      ctx.db.insert("products", {
-        name: "Refrigerante Cola 350ml",
-        description: "Refrigerante cola em lata",
-        price: 4.50,
-        costPrice: 2.00,
-        stock: 100,
-        categoryId: categories[1], // Bebidas
-        sku: "RC001",
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      }),
-      ctx.db.insert("products", {
-        name: "Suco de Laranja Natural",
-        description: "Suco de laranja fresco",
-        price: 6.00,
-        costPrice: 3.00,
-        stock: 40,
-        categoryId: categories[1], // Bebidas
-        sku: "SL001",
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      }),
-      ctx.db.insert("products", {
-        name: "Água Mineral 500ml",
-        description: "Água mineral sem gás",
-        price: 3.00,
-        costPrice: 1.00,
-        stock: 80,
-        categoryId: categories[1], // Bebidas
-        sku: "AM001",
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      }),
+    const bebidasId = await ctx.db.insert("categories", {
+      name: "Bebidas",
+      description: "Refrigerantes e sucos",
+      color: "#4ECDC4",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
 
-      // Acompanhamentos
-      ctx.db.insert("products", {
-        name: "Batata Frita Média",
-        description: "Porção de batatas fritas crocantes",
-        price: 8.00,
-        costPrice: 3.50,
-        stock: 60,
-        categoryId: categories[2], // Acompanhamentos
-        sku: "BF001",
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      }),
-      ctx.db.insert("products", {
-        name: "Salada Caesar",
-        description: "Alface, croutons, parmesão e molho caesar",
-        price: 10.00,
-        costPrice: 5.00,
-        stock: 20,
-        categoryId: categories[2], // Acompanhamentos
-        sku: "SC001",
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      }),
+    // Criar produtos
+    const hotdogSimplesId = await ctx.db.insert("products", {
+      name: "Hot Dog Simples",
+      description: "Pão, salsicha, mostarda e ketchup",
+      price: 8.50,
+      costPrice: 3.50,
+      stock: 100,
+      categoryId: lanchesId,
+      sku: "HD001",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
 
-      // Sobremesas
-      ctx.db.insert("products", {
-        name: "Sorvete de Chocolate",
-        description: "Sorvete cremoso de chocolate",
-        price: 7.00,
-        costPrice: 3.50,
-        stock: 35,
-        categoryId: categories[3], // Sobremesas
-        sku: "SC001",
-        isActive: true,
+    const hotdogDuploId = await ctx.db.insert("products", {
+      name: "Hot Dog Duplo",
+      description: "Pão, 2 salsichas, mostarda e ketchup",
+      price: 12.00,
+      costPrice: 5.00,
+      stock: 80,
+      categoryId: lanchesId,
+      sku: "HD002",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const refrigeranteId = await ctx.db.insert("products", {
+      name: "Refrigerante 350ml",
+      description: "Coca-Cola, Pepsi ou Sprite",
+      price: 4.50,
+      costPrice: 2.00,
+      stock: 150,
+      categoryId: bebidasId,
+      sku: "REF001",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Criar vendas de exemplo
+    const venda1Id = await ctx.db.insert("sales", {
+      userId,
+      clerkUserId: "user_test_123",
+      total: 21.00,
+      discount: 0,
+      paymentMethod: "dinheiro",
+      status: "pendente",
+      notes: "Mesa: Mesa 1",
+      saleDate: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const venda2Id = await ctx.db.insert("sales", {
+      userId,
+      clerkUserId: "user_test_123",
+      total: 16.50,
+      discount: 0,
+      paymentMethod: "cartao",
+      status: "pendente",
+      notes: "Mesa: Mesa 2",
+      saleDate: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    // Criar itens das vendas
+    await ctx.db.insert("saleItems", {
+      saleId: venda1Id,
+      productId: hotdogSimplesId,
+      productName: "Hot Dog Simples",
+      unitPrice: 8.50,
+      quantity: 1,
+      subtotal: 8.50,
+      createdAt: now,
+    });
+
+    await ctx.db.insert("saleItems", {
+      saleId: venda1Id,
+      productId: hotdogDuploId,
+      productName: "Hot Dog Duplo",
+      unitPrice: 12.00,
+      quantity: 1,
+      subtotal: 12.00,
+      createdAt: now,
+    });
+
+    await ctx.db.insert("saleItems", {
+      saleId: venda2Id,
+      productId: hotdogSimplesId,
+      productName: "Hot Dog Simples",
+      unitPrice: 8.50,
+      quantity: 1,
+      subtotal: 8.50,
+      createdAt: now,
+    });
+
+    await ctx.db.insert("saleItems", {
+      saleId: venda2Id,
+      productId: refrigeranteId,
+      productName: "Refrigerante 350ml",
+      unitPrice: 4.50,
+      quantity: 1,
+      subtotal: 4.50,
+      createdAt: now,
+    });
+
+    // Criar alguns itens já em produção para demonstração
+    const saleItem1 = await ctx.db
+      .query("saleItems")
+      .withIndex("by_sale", (q) => q.eq("saleId", venda1Id))
+      .filter((q) => q.eq(q.field("productName"), "Hot Dog Simples"))
+      .first();
+
+    if (saleItem1) {
+      await ctx.db.insert("productionItems", {
+        saleItemId: saleItem1._id,
+        saleId: venda1Id,
+        productionStatus: "em_producao",
+        startedBy: userId,
+        startedAt: now - 300000, // 5 minutos atrás
         createdAt: now,
         updatedAt: now,
-      }),
-      ctx.db.insert("products", {
-        name: "Pudim de Leite",
-        description: "Pudim tradicional de leite condensado",
-        price: 6.50,
-        costPrice: 3.00,
-        stock: 25,
-        categoryId: categories[3], // Sobremesas
-        sku: "PL001",
-        isActive: true,
-        createdAt: now,
-        updatedAt: now,
-      }),
-    ]);
+      });
+    }
 
     return {
       message: "Banco de dados populado com sucesso!",
-      categories: categories.length,
-      products: products.length,
-      timestamp: now,
+      users: 1,
+      categories: 2,
+      products: 3,
+      sales: 2,
+      saleItems: 4,
+      productionItems: 1,
     };
   },
 });

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Search, Hourglass, UtensilsCrossed, Bell, CheckCircle2, AlertTriangle, ChefHat } from 'lucide-react';
+import { Search, Hourglass, UtensilsCrossed, Bell, CheckCircle2, AlertTriangle, ChefHat, Clock, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
@@ -10,45 +10,78 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
 const statusConfig = {
-  Pendente: {
+  pendente: {
     icon: Hourglass,
     color: "bg-red-500/20 text-red-400 border-red-500/30",
     bgColor: "bg-red-500",
+    label: "Pendente",
   },
-  'Em Produção': {
+  em_producao: {
     icon: UtensilsCrossed,
     color: "bg-orange-500/20 text-orange-400 border-orange-500/30",
     bgColor: "bg-orange-500",
+    label: "Em Produção",
   },
-  Concluído: {
+  concluido: {
     icon: Bell,
     color: "bg-blue-500/20 text-blue-400 border-blue-500/30",
     bgColor: "bg-blue-500",
+    label: "Concluído",
   },
-  Entregue: {
+  pronto: {
     icon: CheckCircle2,
     color: "bg-green-500/20 text-green-400 border-green-500/30",
     bgColor: "bg-green-500",
+    label: "Pronto",
+  },
+  entregue: {
+    icon: CheckCircle2,
+    color: "bg-green-500/20 text-green-400 border-green-500/30",
+    bgColor: "bg-green-500",
+    label: "Entregue",
   }
 };
 
 const statusTransitions = {
-  Pendente: ['Em Produção'],
-  'Em Produção': ['Concluído'],
-  Concluído: ['Entregue'],
-  Entregue: []
+  pendente: ['em_producao'],
+  em_producao: ['concluido'],
+  concluido: ['entregue'],
+  pronto: ['entregue'],
+  entregue: []
 };
 
-const ProductionItem = ({ item, onStatusChange }) => {
-  const currentStatusInfo = statusConfig[item.status];
-  const nextStatus = statusTransitions[item.status]?.[0];
+/**
+ * Componente para exibir um item individual de produção
+ * Cada item tem seu próprio botão de ação baseado no status atual
+ * Bebidas entram automaticamente como "Pronto" (concluído)
+ */
+const ProductionItem = ({ item, onStatusChange, isFirstItem }) => {
+  const currentStatusInfo = statusConfig[item.productionStatus];
+  const nextStatus = statusTransitions[item.productionStatus]?.[0];
   const nextStatusInfo = nextStatus ? statusConfig[nextStatus] : null;
 
   const handleStatusChange = () => {
     if (nextStatus) {
-      onStatusChange(item.itemId, nextStatus);
+      onStatusChange(item._id, nextStatus);
     }
   };
+
+  const formatTime = (timestamp) => {
+    if (!timestamp) return null;
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  // Determinar se é bebida
+  const isBeverage = item.isBeverage || 
+                     item.category?.name?.toLowerCase().includes('bebida') ||
+                     item.product?.name?.toLowerCase().includes('refrigerante') ||
+                     item.product?.name?.toLowerCase().includes('suco') ||
+                     item.product?.name?.toLowerCase().includes('água');
+
+  // Para bebidas, mostrar status especial
+  const displayStatus = isBeverage && item.productionStatus === "concluido" ? "pronto" : item.productionStatus;
+  const statusDisplayInfo = statusConfig[displayStatus] || currentStatusInfo;
 
   return (
     <motion.div
@@ -56,67 +89,158 @@ const ProductionItem = ({ item, onStatusChange }) => {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.8 }}
-      className={cn("p-4 rounded-lg border", currentStatusInfo.color)}
+      className={cn(
+        "p-4 rounded-lg border",
+        statusDisplayInfo.color,
+        isFirstItem && "border-l-4 border-l-white/30",
+        isBeverage && "border-l-4 border-l-blue-400/50"
+      )}
     >
-      <div className="flex justify-between items-start">
-        <div className="flex-1">
-          <p className="font-bold text-white">{item.quantity}x {item.name}</p>
-          {item.notes && item.notes !== item.name && (
-            <p className="text-sm text-white/60">{item.notes}</p>
+      {/* Indicador de grupo */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center space-x-2">
+          {isBeverage ? (
+            <div className="flex items-center space-x-1 text-blue-400 text-xs font-medium">
+              <span className="w-2 h-2 bg-blue-400 rounded-full"></span>
+              <span>BEBIDA</span>
+            </div>
+          ) : (
+            <div className="flex items-center space-x-1 text-orange-400 text-xs font-medium">
+              <span className="w-2 h-2 bg-orange-400 rounded-full"></span>
+              <span>LANCHE</span>
+            </div>
           )}
         </div>
-        <div className={`flex items-center space-x-2 text-sm font-semibold px-3 py-1 rounded-full ${currentStatusInfo.color}`}>
-          <currentStatusInfo.icon className="h-4 w-4" />
-          <span>{item.status}</span>
+        
+        <div className={`flex items-center space-x-2 text-sm font-semibold px-3 py-1 rounded-full ${statusDisplayInfo.color}`}>
+          <statusDisplayInfo.icon className="h-4 w-4" />
+          <span>
+            {isBeverage && item.productionStatus === "concluido" ? "Pronto" : statusDisplayInfo.label}
+          </span>
         </div>
       </div>
+
+      <div className="flex justify-between items-start mb-3">
+        <div className="flex-1">
+          <p className="font-bold text-white text-lg">
+            {item.quantity}x {item.productName}
+          </p>
+          {item.notes && item.notes !== item.productName && (
+            <p className="text-sm text-white/60 mt-1">{item.notes}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Informações de tempo */}
+      <div className="flex items-center justify-between text-sm text-white/70 mb-3">
+        <div className="flex items-center space-x-2">
+          <Clock className="h-3 w-3" />
+          <span>
+            {isBeverage && item.productionStatus === "concluido" 
+              ? "Pronto para entrega" 
+              : item.startedAt 
+                ? `Iniciado: ${formatTime(item.startedAt)}` 
+                : 'Aguardando início'
+            }
+          </span>
+        </div>
+        {item.completedAt && !isBeverage && (
+          <div className="flex items-center space-x-2">
+            <CheckCircle2 className="h-3 w-3" />
+            <span>Concluído: {formatTime(item.completedAt)}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Botão de ação */}
       {nextStatus && (
         <Button 
           onClick={handleStatusChange} 
-          className={`w-full mt-3 ${nextStatusInfo.bgColor} text-white hover:opacity-90`}
+          className={`w-full ${nextStatusInfo.bgColor} text-white hover:opacity-90 transition-all duration-200`}
         >
           <nextStatusInfo.icon className="h-4 w-4 mr-2" />
-          Mover para "{nextStatus}"
+          {nextStatus === 'em_producao' && 'Iniciar Produção'}
+          {nextStatus === 'concluido' && 'Marcar Concluído'}
+          {nextStatus === 'entregue' && (isBeverage ? 'Marcar Entregue' : 'Marcar Entregue')}
+        </Button>
+      )}
+
+      {/* Botão para reverter status (apenas para lanches em produção ou concluídos) */}
+      {!isBeverage && (item.productionStatus === 'em_producao' || item.productionStatus === 'concluido') && (
+        <Button 
+          onClick={() => onStatusChange(item._id, 'pendente')}
+          variant="outline"
+          className="w-full mt-2 border-white/30 text-white hover:bg-white/10"
+        >
+          <AlertTriangle className="h-4 w-4 mr-2" />
+          Reverter para Pendente
         </Button>
       )}
     </motion.div>
   );
 };
 
+/**
+ * Componente principal da tela de produção
+ * Gerencia o estado e as operações de produção
+ */
 const Production = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
 
-  // Buscar dados do Convex
-  const sales = useQuery(api.sales.listAll) || [];
-  const updateSaleStatus = useMutation(api.sales.updateStatus);
+  // Buscar dados de produção do Convex
+  const productionOrders = useQuery(api.production.listProductionItems) || [];
+  const defaultUser = useQuery(api.production.getDefaultUser);
+  const startProduction = useMutation(api.production.startProduction);
+  const completeProduction = useMutation(api.production.completeProduction);
+  const deliverItem = useMutation(api.production.deliverItem);
+  const revertStatus = useMutation(api.production.revertProductionStatus);
 
-  // Converter vendas para pedidos de produção
-  const orders = sales
-    .filter(sale => sale.status === 'pendente')
-    .map(sale => ({
-      ...sale,
-      // Por enquanto, criar um item por venda
-      // TODO: Implementar busca de itens reais da tabela saleItems
-      items: [{
-        _id: sale._id,
-        name: sale.notes ? sale.notes.replace('Mesa: ', '') : `Pedido ${sale._id.slice(-6)}`,
-        quantity: 1,
-        status: 'Pendente',
-        notes: sale.notes || '',
-        itemId: sale._id
-      }]
-    }))
-    .filter(order => order.items.some(item => item.status !== 'Entregue'));
-
+  /**
+   * Função para gerenciar mudanças de status dos itens
+   * @param {string} itemId - ID do item de venda
+   * @param {string} newStatus - Novo status para o item
+   */
   const handleStatusChange = async (itemId, newStatus) => {
     try {
-      // Atualizar status da venda no Convex
-      await updateSaleStatus({ id: itemId, status: newStatus });
+      // Usar usuário padrão se disponível, senão não passar userId
+      const userId = defaultUser?._id;
+      
+      let result;
+      
+      switch (newStatus) {
+        case 'em_producao':
+          result = await startProduction({ 
+            saleItemId: itemId, 
+            ...(userId && { userId }) 
+          });
+          break;
+        case 'concluido':
+          result = await completeProduction({ 
+            saleItemId: itemId, 
+            ...(userId && { userId }) 
+          });
+          break;
+        case 'entregue':
+          result = await deliverItem({ 
+            saleItemId: itemId, 
+            ...(userId && { userId }) 
+          });
+          break;
+        case 'pendente':
+          result = await revertStatus({ 
+            saleItemId: itemId, 
+            newStatus: 'pendente', 
+            ...(userId && { userId }) 
+          });
+          break;
+        default:
+          throw new Error('Status inválido');
+      }
       
       toast({
         title: "Status atualizado",
-        description: `Item movido para ${newStatus}`,
+        description: `Item movido para ${statusConfig[newStatus]?.label || newStatus}`,
       });
     } catch (error) {
       console.error('Erro ao atualizar status:', error);
@@ -128,8 +252,12 @@ const Production = () => {
     }
   };
 
-  const filteredOrders = orders.filter(order =>
-    (order.tableNumber || '').toLowerCase().includes(searchTerm.toLowerCase())
+  // Filtrar pedidos baseado no termo de busca
+  const filteredOrders = productionOrders.filter(order =>
+    (order.notes || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    order.items.some(item => 
+      item.productName.toLowerCase().includes(searchTerm.toLowerCase())
+    )
   );
 
   return (
@@ -146,7 +274,7 @@ const Production = () => {
         <div className="relative w-full sm:w-auto">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50 h-4 w-4" />
           <Input
-            placeholder="Buscar comanda..."
+            placeholder="Buscar comanda ou produto..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/50 w-full"
@@ -156,18 +284,20 @@ const Production = () => {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4">
         {filteredOrders.length > 0 ? (
-          filteredOrders.map((order, index) => (
+          filteredOrders.map((order, orderIndex) => (
             <motion.div
               key={order._id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
+              transition={{ delay: orderIndex * 0.1 }}
               className="w-full"
             >
               <Card className="glass-effect border-white/20 h-full flex flex-col">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                    <span className="text-lg">{order.notes ? order.notes.replace('Mesa: ', '') : 'Pedido'}</span>
+                    <span className="text-lg">
+                      {order.notes ? order.notes.replace('Mesa: ', '') : `Pedido ${order._id.slice(-6)}`}
+                    </span>
                     <span className="text-sm text-white/70">
                       {order.createdAt ? new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
                     </span>
@@ -175,9 +305,14 @@ const Production = () => {
                 </CardHeader>
                 <CardContent className="flex-1 flex flex-col space-y-3">
                   {order.items
-                    .filter(item => item.status !== 'Entregue')
-                    .map(item => (
-                      <ProductionItem key={item.itemId} item={item} onStatusChange={handleStatusChange} />
+                    .filter(item => item.productionStatus !== 'entregue')
+                    .map((item, itemIndex) => (
+                      <ProductionItem 
+                        key={item._id} 
+                        item={item} 
+                        onStatusChange={handleStatusChange}
+                        isFirstItem={itemIndex === 0}
+                      />
                   ))}
                 </CardContent>
               </Card>

@@ -230,4 +230,64 @@ export default defineSchema({
     .index("by_date", ["closeDate"])
     .index("by_user", ["userId"])
     .index("by_created_at", ["createdAt"]),
+
+  /**
+   * Tabela de controle de produção
+   * Controla o status de produção de cada item individual
+   */
+  productionItems: defineTable({
+    // ID do item de venda
+    saleItemId: v.id("saleItems"),
+    // ID da venda
+    saleId: v.id("sales"),
+    // Status de produção (pendente, em_producao, concluido, entregue)
+    productionStatus: v.string(),
+    // ID do usuário que iniciou a produção
+    startedBy: v.optional(v.id("users")),
+    // ID do usuário que finalizou a produção
+    completedBy: v.optional(v.id("users")),
+    // Data de início da produção
+    startedAt: v.optional(v.number()),
+    // Data de conclusão
+    completedAt: v.optional(v.number()),
+    // Data de entrega
+    deliveredAt: v.optional(v.number()),
+    // Data de criação
+    createdAt: v.number(),
+    // Data de última atualização
+    updatedAt: v.number(),
+  })
+    .index("by_sale_item", ["saleItemId"])
+    .index("by_sale", ["saleId"])
+    .index("by_production_status", ["productionStatus"])
+    .index("by_created_at", ["createdAt"]),
+
+  /**
+   * Tabela de configuração de grupos de produtos
+   * Permite configurar grupos personalizados e sua ordem
+   */
+  productGroups: defineTable({
+    // Nome do grupo (lanches, bebidas, porcoes, etc.)
+    name: v.string(),
+    // Título exibido na interface
+    title: v.string(),
+    // Ícone do grupo (emoji ou classe CSS)
+    icon: v.string(),
+    // Cor do grupo (hex, rgb, etc.)
+    color: v.string(),
+    // Ordem de exibição (menor número aparece primeiro)
+    order: v.number(),
+    // Se o grupo está ativo
+    isActive: v.boolean(),
+    // Palavras-chave para detecção automática de categorias
+    keywords: v.array(v.string()),
+    // Data de criação
+    createdAt: v.number(),
+    // Data de última atualização
+    updatedAt: v.number(),
+  })
+    .index("by_name", ["name"])
+    .index("by_order", ["order"])
+    .index("by_active", ["isActive"])
+    .index("by_created_at", ["createdAt"]),
 });
