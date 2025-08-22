@@ -67,6 +67,7 @@ export const listProductionItems = query({
             let productionStatus = productionItem?.productionStatus || "pendente";
             
             // Se é bebida e não tem registro de produção, marcar como "concluido" para exibição
+            // Bebidas são automaticamente consideradas prontas para entrega
             if (isBeverage && !productionItem) {
               productionStatus = "concluido";
             }
@@ -283,6 +284,7 @@ export const completeProduction = mutation({
 /**
  * Mutation para entregar um item concluído
  * Muda status de "concluido" para "entregue"
+ * Para bebidas que não passaram pelo processo normal, cria registro se necessário
  */
 export const deliverItem = mutation({
   args: {
@@ -295,21 +297,54 @@ export const deliverItem = mutation({
       throw new Error("Item de venda não encontrado");
     }
 
+    // Buscar informações do produto para determinar se é bebida
+    const product = await ctx.db.get(saleItem.productId);
+    const category = product ? await ctx.db.get(product.categoryId) : null;
+    
+    const isBeverage = category?.name?.toLowerCase().includes('bebida') || 
+                      product?.name?.toLowerCase().includes('refrigerante') ||
+                      product?.name?.toLowerCase().includes('suco') ||
+                      product?.name?.toLowerCase().includes('água');
+
     const productionItem = await ctx.db
       .query("productionItems")
       .withIndex("by_sale_item", (q) => q.eq("saleItemId", args.saleItemId))
       .first();
 
-    if (!productionItem) {
-      throw new Error("Item de produção não encontrado");
-    }
-
-    if (productionItem.productionStatus !== "concluido") {
-      throw new Error("Item não está concluído");
-    }
-
     const now = Date.now();
 
+    if (!productionItem) {
+      // Se não existe registro de produção e é bebida, criar um como "concluido"
+      if (isBeverage) {
+        const productionId = await ctx.db.insert("productionItems", {
+          saleItemId: args.saleItemId,
+          saleId: saleItem.saleId,
+          productionStatus: "concluido",
+          startedAt: now,
+          completedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+        
+        // Agora marcar como entregue
+        await ctx.db.patch(productionId, {
+          productionStatus: "entregue",
+          deliveredAt: now,
+          updatedAt: now,
+        });
+        
+        return productionId;
+      } else {
+        throw new Error("Item de produção não encontrado");
+      }
+    }
+
+    // Verificar se o status atual permite mudança para "entregue"
+    if (productionItem.productionStatus !== "concluido") {
+      throw new Error(`Item não está concluído (status atual: ${productionItem.productionStatus})`);
+    }
+
+    // Marcar como entregue
     await ctx.db.patch(productionItem._id, {
       productionStatus: "entregue",
       deliveredAt: now,

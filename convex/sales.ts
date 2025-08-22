@@ -298,6 +298,128 @@ export const updateStatus = mutation({
 });
 
 /**
+ * Mutation para atualizar método de pagamento e status de uma venda
+ * Permite processar pagamento com método específico
+ */
+export const updatePaymentAndStatus = mutation({
+  args: {
+    id: v.id("sales"),
+    status: v.string(),
+    paymentMethod: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const sale = await ctx.db.get(args.id);
+    
+    if (!sale) {
+      throw new Error("Venda não encontrada");
+    }
+
+    // Validações de status
+    const validStatuses = ["pendente", "paga", "cancelada"];
+    if (!validStatuses.includes(args.status)) {
+      throw new Error("Status inválido");
+    }
+
+    // Validações de método de pagamento
+    const validPaymentMethods = ["money", "credit", "debit", "pix"];
+    if (!validPaymentMethods.includes(args.paymentMethod)) {
+      throw new Error("Método de pagamento inválido");
+    }
+
+    // Se cancelando venda, restaurar estoque
+    if (args.status === "cancelada" && sale.status !== "cancelada") {
+      const items = await ctx.db
+        .query("saleItems")
+        .withIndex("by_sale", (q) => q.eq("saleId", args.id))
+        .collect();
+
+      // Restaurar estoque de cada produto
+      for (const item of items) {
+        const product = await ctx.db.get(item.productId);
+        if (product) {
+          await ctx.db.patch(item.productId, {
+            stock: product.stock + item.quantity,
+            updatedAt: Date.now(),
+          });
+        }
+      }
+    }
+
+    // Atualizar status e método de pagamento da venda
+    await ctx.db.patch(args.id, {
+      status: args.status,
+      paymentMethod: args.paymentMethod,
+      updatedAt: Date.now(),
+    });
+
+    return args.id;
+  },
+});
+
+/**
+ * Mutation para processar pagamento com múltiplos métodos
+ * Cria registros separados para cada método de pagamento usado
+ */
+export const processPaymentWithMethods = mutation({
+  args: {
+    saleId: v.id("sales"),
+    paymentMethods: v.array(v.object({
+      method: v.string(),
+      amount: v.number(),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const sale = await ctx.db.get(args.saleId);
+    
+    if (!sale) {
+      throw new Error("Venda não encontrada");
+    }
+
+    // Validar métodos de pagamento
+    const validPaymentMethods = ["money", "credit", "debit", "pix"];
+    for (const payment of args.paymentMethods) {
+      if (!validPaymentMethods.includes(payment.method)) {
+        throw new Error(`Método de pagamento inválido: ${payment.method}`);
+      }
+    }
+
+    // Calcular total dos pagamentos
+    const totalPaid = args.paymentMethods.reduce((sum, payment) => sum + payment.amount, 0);
+    
+    // Verificar se o total pago é igual ao total da venda
+    if (Math.abs(totalPaid - sale.total) > 0.01) {
+      throw new Error(`Total pago (R$ ${totalPaid.toFixed(2)}) não confere com total da venda (R$ ${sale.total.toFixed(2)})`);
+    }
+
+    // Determinar método principal (maior valor)
+    const mainMethod = args.paymentMethods.reduce((prev, current) => {
+      return (prev.amount > current.amount) ? prev : current;
+    });
+
+    // Atualizar venda com status "paga" e método principal
+    await ctx.db.patch(args.saleId, {
+      status: "paga",
+      paymentMethod: mainMethod.method,
+      updatedAt: Date.now(),
+    });
+
+    // Criar registros de pagamento para cada método usado
+    const paymentRecords = await Promise.all(
+      args.paymentMethods.map(async (payment) => {
+        return await ctx.db.insert("paymentMethods", {
+          saleId: args.saleId,
+          method: payment.method,
+          amount: payment.amount,
+          createdAt: Date.now(),
+        });
+      })
+    );
+
+    return { saleId: args.saleId, paymentRecords };
+  },
+});
+
+/**
  * Mutation para adicionar desconto a uma venda
  * Permite aplicar ou alterar desconto em uma venda
  */
@@ -365,6 +487,59 @@ export const getByPaymentMethod = query({
       total,
       count: sales.length,
     };
+  },
+});
+
+/**
+ * Query para buscar métodos de pagamento de uma venda
+ * Retorna todos os métodos usados em uma venda específica
+ */
+export const getPaymentMethods = query({
+  args: { saleId: v.id("sales") },
+  handler: async (ctx, args) => {
+    const methods = await ctx.db
+      .query("paymentMethods")
+      .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
+      .collect();
+
+    return methods.sort((a, b) => a.createdAt - b.createdAt);
+  },
+});
+
+/**
+ * Query para buscar todos os métodos de pagamento das vendas do dia
+ * Retorna métodos agrupados por tipo para cálculo do caixa
+ */
+export const getDailyPaymentMethods = query({
+  args: { 
+    startDate: v.number(),
+    endDate: v.number()
+  },
+  handler: async (ctx, args) => {
+    // Buscar vendas pagas no período
+    const sales = await ctx.db
+      .query("sales")
+      .withIndex("by_date", (q) => q.gte("saleDate", args.startDate))
+      .filter((q) => 
+        q.and(
+          q.lte(q.field("saleDate"), args.endDate),
+          q.eq(q.field("status"), "paga")
+        )
+      )
+      .collect();
+
+    // Buscar métodos de pagamento para essas vendas
+    const allMethods = [];
+    for (const sale of sales) {
+      const methods = await ctx.db
+        .query("paymentMethods")
+        .withIndex("by_sale", (q) => q.eq("saleId", sale._id))
+        .collect();
+      
+      allMethods.push(...methods);
+    }
+
+    return allMethods;
   },
 });
 

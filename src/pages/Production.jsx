@@ -46,7 +46,8 @@ const statusTransitions = {
   pendente: ['em_producao'],
   em_producao: ['concluido'],
   concluido: ['entregue'],
-  pronto: ['entregue'],
+  // Para bebidas, "concluido" é exibido como "pronto" mas internamente é "concluido"
+  // então a transição de "concluido" para "entregue" funciona para ambos
   entregue: []
 };
 
@@ -57,7 +58,23 @@ const statusTransitions = {
  */
 const ProductionItem = ({ item, onStatusChange, isFirstItem }) => {
   const currentStatusInfo = statusConfig[item.productionStatus];
-  const nextStatus = statusTransitions[item.productionStatus]?.[0];
+  
+  // Determinar se é bebida
+  const isBeverage = item.isBeverage || 
+                     item.category?.name?.toLowerCase().includes('bebida') ||
+                     item.product?.name?.toLowerCase().includes('refrigerante') ||
+                     item.product?.name?.toLowerCase().includes('suco') ||
+                     item.product?.name?.toLowerCase().includes('água');
+  
+  // Para bebidas, determinar o próximo status baseado no status real, não no exibido
+  let nextStatus;
+  if (isBeverage && item.productionStatus === "concluido") {
+    // Bebidas "concluido" (exibidas como "pronto") podem ir para "entregue"
+    nextStatus = "entregue";
+  } else {
+    nextStatus = statusTransitions[item.productionStatus]?.[0];
+  }
+  
   const nextStatusInfo = nextStatus ? statusConfig[nextStatus] : null;
 
   const handleStatusChange = () => {
@@ -72,14 +89,8 @@ const ProductionItem = ({ item, onStatusChange, isFirstItem }) => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  // Determinar se é bebida
-  const isBeverage = item.isBeverage || 
-                     item.category?.name?.toLowerCase().includes('bebida') ||
-                     item.product?.name?.toLowerCase().includes('refrigerante') ||
-                     item.product?.name?.toLowerCase().includes('suco') ||
-                     item.product?.name?.toLowerCase().includes('água');
-
   // Para bebidas, mostrar status especial
+  // Bebidas com status "concluido" são exibidas como "pronto" na interface
   const displayStatus = isBeverage && item.productionStatus === "concluido" ? "pronto" : item.productionStatus;
   const statusDisplayInfo = statusConfig[displayStatus] || currentStatusInfo;
 
@@ -161,7 +172,7 @@ const ProductionItem = ({ item, onStatusChange, isFirstItem }) => {
           <nextStatusInfo.icon className="h-4 w-4 mr-2" />
           {nextStatus === 'em_producao' && 'Iniciar Produção'}
           {nextStatus === 'concluido' && 'Marcar Concluído'}
-          {nextStatus === 'entregue' && (isBeverage ? 'Marcar Entregue' : 'Marcar Entregue')}
+          {nextStatus === 'entregue' && 'Marcar Entregue'}
         </Button>
       )}
 
@@ -208,34 +219,37 @@ const Production = () => {
       
       let result;
       
-      switch (newStatus) {
-        case 'em_producao':
-          result = await startProduction({ 
-            saleItemId: itemId, 
-            ...(userId && { userId }) 
-          });
-          break;
-        case 'concluido':
-          result = await completeProduction({ 
-            saleItemId: itemId, 
-            ...(userId && { userId }) 
-          });
-          break;
-        case 'entregue':
-          result = await deliverItem({ 
-            saleItemId: itemId, 
-            ...(userId && { userId }) 
-          });
-          break;
-        case 'pendente':
-          result = await revertStatus({ 
-            saleItemId: itemId, 
-            newStatus: 'pendente', 
-            ...(userId && { userId }) 
-          });
-          break;
-        default:
-          throw new Error('Status inválido');
+      // Para bebidas, quando clicar em "Marcar Entregue", usar status "entregue"
+      // mas internamente o item pode estar com status "concluido"
+      if (newStatus === 'entregue') {
+        result = await deliverItem({ 
+          saleItemId: itemId, 
+          ...(userId && { userId }) 
+        });
+      } else {
+        switch (newStatus) {
+          case 'em_producao':
+            result = await startProduction({ 
+              saleItemId: itemId, 
+              ...(userId && { userId }) 
+            });
+            break;
+          case 'concluido':
+            result = await completeProduction({ 
+              saleItemId: itemId, 
+              ...(userId && { userId }) 
+            });
+            break;
+          case 'pendente':
+            result = await revertStatus({ 
+              saleItemId: itemId, 
+              newStatus: 'pendente', 
+              ...(userId && { userId }) 
+            });
+            break;
+          default:
+            throw new Error('Status inválido');
+        }
       }
       
       toast({
@@ -246,7 +260,7 @@ const Production = () => {
       console.error('Erro ao atualizar status:', error);
       toast({
         title: "Erro",
-        description: "Erro ao atualizar status do item",
+        description: `Erro ao atualizar status do item: ${error.message || 'Tente novamente'}`,
         variant: "destructive"
       });
     }

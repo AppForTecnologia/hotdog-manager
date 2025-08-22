@@ -232,6 +232,24 @@ export default defineSchema({
     .index("by_created_at", ["createdAt"]),
 
   /**
+   * Tabela de métodos de pagamento por venda
+   * Permite múltiplos métodos de pagamento em uma única venda
+   */
+  paymentMethods: defineTable({
+    // ID da venda
+    saleId: v.id("sales"),
+    // Método de pagamento (money, credit, debit, pix)
+    method: v.string(),
+    // Valor pago com este método
+    amount: v.number(),
+    // Data de criação
+    createdAt: v.number(),
+  })
+    .index("by_sale", ["saleId"])
+    .index("by_method", ["method"])
+    .index("by_created_at", ["createdAt"]),
+
+  /**
    * Tabela de controle de produção
    * Controla o status de produção de cada item individual
    */

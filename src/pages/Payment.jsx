@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { CreditCard, Banknote, Smartphone, DollarSign, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,8 @@ import { api } from "../../convex/_generated/api";
 const Payment = () => {
   const orders = useQuery(api.sales.listByStatus, { status: "pendente" }) || [];
   const updateSaleStatus = useMutation(api.sales.updateStatus);
+  const updatePaymentAndStatus = useMutation(api.sales.updatePaymentAndStatus);
+  const processPaymentWithMethods = useMutation(api.sales.processPaymentWithMethods);
   
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedItems, setSelectedItems] = useState([]);
@@ -23,14 +25,25 @@ const Payment = () => {
   });
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const selectOrder = async (order) => {
-    // Buscar os itens da venda
-    const items = await fetch(api.sales.getSaleItems, { saleId: order._id });
-    
+  // Hook para buscar os itens da venda selecionada
+  const saleItems = useQuery(
+    api.sales.getSaleItems, 
+    selectedOrder ? { saleId: selectedOrder._id } : "skip"
+  ) || [];
+
+  // Função corrigida para selecionar um pedido
+  const selectOrder = (order) => {
     setSelectedOrder(order);
-    setSelectedItems(items || []);
     setPaymentMethods([]);
+    setCurrentPayment({ method: 'money', amount: '' });
   };
+
+  // Atualizar itens quando saleItems mudar
+  useEffect(() => {
+    if (saleItems && saleItems.length > 0) {
+      setSelectedItems(saleItems);
+    }
+  }, [saleItems]);
 
   const getSelectedTotal = () => {
     if (!selectedOrder) return 0;
@@ -130,10 +143,13 @@ const Payment = () => {
     setIsProcessing(true);
 
     try {
-      // Atualizar status da venda para "paga"
-      await updateSaleStatus({
-        id: selectedOrder._id,
-        status: "paga"
+      // Processar pagamento com múltiplos métodos
+      await processPaymentWithMethods({
+        saleId: selectedOrder._id,
+        paymentMethods: paymentMethods.map(payment => ({
+          method: payment.method,
+          amount: payment.amount
+        }))
       });
 
       toast({

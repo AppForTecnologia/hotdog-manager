@@ -7,9 +7,12 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/components/ui/use-toast';
 import { useQuery, useMutation } from "convex/react";
+import { useUser } from "@clerk/clerk-react";
 import { api } from "../../convex/_generated/api";
 
 const CashRegister = () => {
+  const { user } = useUser();
+  
   const [cashCounts, setCashCounts] = useState({
     money: '',
     credit: '',
@@ -35,41 +38,61 @@ const CashRegister = () => {
   const sales = useQuery(api.sales.listAll) || [];
   const cashRegisterHistory = useQuery(api.cashRegister.listAll) || [];
   const createCashRegisterClose = useMutation(api.cashRegister.create);
+  
+  // Buscar métodos de pagamento das vendas do dia
+  const today = new Date();
+  const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+  const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59).getTime();
+  
+  const dailyPaymentMethods = useQuery(api.sales.getDailyPaymentMethods, { 
+    startDate: startOfDay, 
+    endDate: endOfDay 
+  }) || [];
+  
+  // Buscar usuário do Convex
+  const currentUser = useQuery(api.users.getByClerkId, user ? { clerkId: user.id } : "skip");
 
-  // Calcular vendas de hoje
+  // Calcular vendas pagas de hoje
   const todaySales = sales.filter(sale => {
     const today = new Date().toDateString();
-    return new Date(sale.saleDate).toDateString() === today;
+    const saleDate = new Date(sale.saleDate).toDateString();
+    // Filtrar apenas vendas pagas do dia atual
+    return saleDate === today && sale.status === "paga";
   });
 
   useEffect(() => {
-    if (todaySales.length > 0) {
-      // Calculate sales summary by payment method
-      const summary = {
-        money: 0,
-        credit: 0,
-        debit: 0,
-        pix: 0,
-        total: 0
-      };
+    console.log("Calculando resumo de vendas...");
+    console.log("Vendas de hoje (pagas):", todaySales);
+    console.log("Métodos de pagamento do dia:", dailyPaymentMethods);
+    
+    // Calcular resumo de vendas por método de pagamento
+    const summary = {
+      money: 0,
+      credit: 0,
+      debit: 0,
+      pix: 0,
+      total: 0
+    };
 
-      todaySales.forEach(sale => {
-        // No Convex, paymentMethod é uma string, não um array
-        // Vamos simular o array para manter compatibilidade
-        const paymentMethods = [{
-          method: sale.paymentMethod,
-          amount: sale.total
-        }];
-        
-        paymentMethods.forEach(payment => {
-          summary[payment.method] += payment.amount;
-          summary.total += payment.amount;
-        });
-      });
+    // Usar os métodos de pagamento reais da tabela paymentMethods
+    dailyPaymentMethods.forEach(payment => {
+      console.log(`Processando pagamento: ${payment.method} - R$ ${payment.amount}`);
+      
+      if (summary.hasOwnProperty(payment.method)) {
+        summary[payment.method] += payment.amount;
+        summary.total += payment.amount;
+        console.log(`- Adicionado R$ ${payment.amount} ao método ${payment.method}`);
+      } else {
+        console.warn(`Método de pagamento desconhecido: "${payment.method}"`, payment);
+        // Adicionar ao total mesmo se o método não for reconhecido
+        summary.total += payment.amount;
+        console.log(`- Adicionado R$ ${payment.amount} ao total (método desconhecido)`);
+      }
+    });
 
-      setSalesSummary(summary);
-    }
-  }, [todaySales]);
+    console.log("Resumo final calculado:", summary);
+    setSalesSummary(summary);
+  }, [todaySales, dailyPaymentMethods]);
 
   useEffect(() => {
     calculateDifferences();
@@ -98,7 +121,7 @@ const CashRegister = () => {
     });
   };
 
-  const saveCashRegisterClose = () => {
+  const saveCashRegisterClose = async () => {
     const totalCounted = Object.values(cashCounts).reduce((sum, value) => 
       sum + (parseFloat(value) || 0), 0
     );
@@ -112,9 +135,18 @@ const CashRegister = () => {
       return;
     }
 
+    if (!currentUser || !user) {
+      toast({
+        title: "Erro",
+        description: "Usuário não encontrado. Faça login novamente.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     const closeData = {
-      userId: "placeholder_user_id", // TODO: Pegar do usuário logado
-      clerkUserId: "placeholder_clerk_id", // TODO: Pegar do Clerk
+      userId: currentUser._id,
+      clerkUserId: user.id,
       moneyCount: parseFloat(cashCounts.money) || 0,
       creditCount: parseFloat(cashCounts.credit) || 0,
       debitCount: parseFloat(cashCounts.debit) || 0,
@@ -134,7 +166,7 @@ const CashRegister = () => {
     };
 
     try {
-      createCashRegisterClose(closeData);
+      await createCashRegisterClose(closeData);
       
       toast({
         title: "Caixa fechado com sucesso!",
@@ -330,7 +362,7 @@ const CashRegister = () => {
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
               <div className="p-4 rounded-lg bg-white/5">
-                <p className="text-white/70 text-sm">Total de Vendas</p>
+                <p className="text-white/70 text-sm">Total de Vendas (Pagas)</p>
                 <p className="text-2xl font-bold text-green-400">{todaySales.length}</p>
               </div>
               <div className="p-4 rounded-lg bg-white/5">

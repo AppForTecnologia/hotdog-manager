@@ -19,7 +19,9 @@ const Dashboard = () => {
     totalProducts: 0,
     averageTicket: 0,
     openOrders: 0,
-    activeOperators: 1
+    activeOperators: 0,
+    salesChange: 0,
+    ordersChange: 0
   });
 
   // Buscar dados do Convex
@@ -28,30 +30,35 @@ const Dashboard = () => {
   const users = useQuery(api.users.listActive) || [];
 
   useEffect(() => {
-    // Usar dados mockados se o Convex não estiver funcionando
-    const mockStats = {
-      todaySales: 850.75,
-      todayOrders: 12,
-      totalProducts: 15,
-      averageTicket: 70.90,
-      openOrders: 3,
-      activeOperators: 1
-    };
-
-    if (sales && products && users && sales.length > 0) {
-      // Calcular estatísticas reais se os dados estiverem disponíveis
+    if (sales && products && users) {
+      // Calcular estatísticas reais
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       
+      // Vendas de hoje (apenas pagas)
       const todaySales = sales.filter(sale => {
         const saleDate = new Date(sale.saleDate);
-        return saleDate >= today;
+        return saleDate >= today && sale.status === 'paga';
+      });
+      
+      // Vendas de ontem para comparação
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+      
+      const yesterdaySales = sales.filter(sale => {
+        const saleDate = new Date(sale.saleDate);
+        return saleDate >= yesterday && saleDate < today && sale.status === 'paga';
       });
       
       const totalRevenue = todaySales.reduce((sum, sale) => sum + sale.total, 0);
+      const yesterdayRevenue = yesterdaySales.reduce((sum, sale) => sum + sale.total, 0);
       const avgTicket = todaySales.length > 0 ? totalRevenue / todaySales.length : 0;
       
       const openOrders = sales.filter(sale => sale.status === 'pendente').length;
+      
+      // Calcular variação percentual
+      const salesChange = yesterdayRevenue > 0 ? ((totalRevenue - yesterdayRevenue) / yesterdayRevenue * 100) : 0;
+      const ordersChange = yesterdaySales.length > 0 ? ((todaySales.length - yesterdaySales.length) / yesterdaySales.length * 100) : 0;
       
       setStats({
         todaySales: totalRevenue,
@@ -59,11 +66,10 @@ const Dashboard = () => {
         totalProducts: products.length,
         averageTicket: avgTicket,
         openOrders: openOrders,
-        activeOperators: users.length
+        activeOperators: users.length,
+        salesChange: salesChange,
+        ordersChange: ordersChange
       });
-    } else {
-      // Usar dados mockados temporariamente
-      setStats(mockStats);
     }
   }, [sales, products, users]);
 
@@ -73,42 +79,48 @@ const Dashboard = () => {
       value: `R$ ${stats.todaySales.toFixed(2)}`,
       icon: DollarSign,
       color: 'from-emerald-500 to-green-600',
-      change: '+12%'
+      change: `${stats.salesChange >= 0 ? '+' : ''}${stats.salesChange.toFixed(1)}%`,
+      changeColor: stats.salesChange >= 0 ? 'text-green-400' : 'text-red-400'
     },
     {
       title: 'Pedidos Hoje',
       value: stats.todayOrders,
       icon: ShoppingCart,
       color: 'from-blue-500 to-cyan-600',
-      change: '+8%'
+      change: `${stats.ordersChange >= 0 ? '+' : ''}${stats.ordersChange.toFixed(1)}%`,
+      changeColor: stats.ordersChange >= 0 ? 'text-green-400' : 'text-red-400'
     },
     {
       title: 'Produtos Cadastrados',
       value: stats.totalProducts,
       icon: Package,
       color: 'from-slate-500 to-gray-600',
-      change: '+2%'
+      change: 'Total',
+      changeColor: 'text-blue-400'
     },
     {
       title: 'Ticket Médio',
       value: `R$ ${stats.averageTicket.toFixed(2)}`,
       icon: TrendingUp,
       color: 'from-orange-500 to-amber-600',
-      change: '+5%'
+      change: 'Média',
+      changeColor: 'text-orange-400'
     },
     {
       title: 'Pedidos Abertos',
       value: stats.openOrders,
       icon: Clock,
       color: 'from-yellow-500 to-orange-600',
-      change: '-3%'
+      change: 'Pendentes',
+      changeColor: 'text-yellow-400'
     },
     {
       title: 'Operadores Ativos',
       value: stats.activeOperators,
       icon: Users,
       color: 'from-indigo-500 to-blue-600',
-      change: '0%'
+      change: 'Online',
+      changeColor: 'text-indigo-400'
     }
   ];
 
@@ -148,8 +160,8 @@ const Dashboard = () => {
                 <div className="text-2xl font-bold text-white mb-1">
                   {stat.value}
                 </div>
-                <p className="text-xs text-green-400">
-                  {stat.change} em relação a ontem
+                <p className={`text-xs ${stat.changeColor}`}>
+                  {stat.change}
                 </p>
               </CardContent>
             </Card>
@@ -169,18 +181,34 @@ const Dashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {[1, 2, 3].map((item) => (
-                  <div key={item} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-                    <div>
-                      <p className="text-white font-medium">Comanda #{item.toString().padStart(3, '0')}</p>
-                      <p className="text-white/60 text-sm">Mesa {item}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-white font-bold">R$ {(15.50 * item).toFixed(2)}</p>
-                      <p className="text-green-400 text-sm">Pago</p>
-                    </div>
+                {sales.length > 0 ? (
+                  sales
+                    .filter(sale => sale.status === 'paga')
+                    .slice(0, 5)
+                    .map((sale, index) => (
+                      <div key={sale._id} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+                        <div>
+                          <p className="text-white font-medium">
+                            {sale.notes ? sale.notes : `Venda #${sale._id.slice(-6)}`}
+                          </p>
+                          <p className="text-white/60 text-sm">
+                            {new Date(sale.saleDate).toLocaleTimeString('pt-BR', {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-white font-bold">R$ {sale.total.toFixed(2)}</p>
+                          <p className="text-green-400 text-sm capitalize">{sale.paymentMethod}</p>
+                        </div>
+                      </div>
+                    ))
+                ) : (
+                  <div className="text-center py-8 text-white/60">
+                    <p>Nenhuma venda encontrada</p>
                   </div>
-                ))}
+                )}
               </div>
             </CardContent>
           </Card>
@@ -197,27 +225,32 @@ const Dashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {[
-                  { name: 'Hot Dog Tradicional', sales: 25 },
-                  { name: 'Hot Dog Especial', sales: 18 },
-                  { name: 'Refrigerante', sales: 32 }
-                ].map((product, index) => (
-                  <div key={product.name} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-                    <div>
-                      <p className="text-white font-medium">{product.name}</p>
-                      <p className="text-white/60 text-sm">#{index + 1} mais vendido</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-white font-bold">{product.sales} vendas</p>
-                      <div className="w-20 h-2 bg-white/20 rounded-full mt-1">
-                        <div 
-                          className="h-full bg-gradient-to-r from-blue-500 to-cyan-600 rounded-full"
-                          style={{ width: `${(product.sales / 32) * 100}%` }}
-                        />
+                {products.length > 0 ? (
+                  products
+                    .filter(product => product.stock > 0)
+                    .slice(0, 5)
+                    .map((product, index) => (
+                      <div key={product._id} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+                        <div>
+                          <p className="text-white font-medium">{product.name}</p>
+                          <p className="text-white/60 text-sm">#{index + 1} em estoque</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-white font-bold">{product.stock} unidades</p>
+                          <div className="w-20 h-2 bg-white/20 rounded-full mt-1">
+                            <div 
+                              className="h-full bg-gradient-to-r from-blue-500 to-cyan-600 rounded-full"
+                              style={{ width: `${(product.stock / Math.max(...products.map(p => p.stock))) * 100}%` }}
+                            />
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    ))
+                ) : (
+                  <div className="text-center py-8 text-white/60">
+                    <p>Nenhum produto cadastrado</p>
                   </div>
-                ))}
+                )}
               </div>
             </CardContent>
           </Card>
