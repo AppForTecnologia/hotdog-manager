@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "node tools/generate-llms.js || true && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:vercel": "vite build",
+    "vercel-build": "vite build"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.40.0",
