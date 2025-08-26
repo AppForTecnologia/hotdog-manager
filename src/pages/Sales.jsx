@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Minus, ShoppingCart, Trash2 } from 'lucide-react';
+import { Plus, Minus, ShoppingCart, Trash2, Settings, ArrowUp, ArrowDown, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/use-toast';
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -30,6 +30,7 @@ const Sales = () => {
   const [itemNotes, setItemNotes] = useState('');
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Encontrar o usuário atual no banco
   const currentUser = users.find(u => u.clerkId === user?.id);
@@ -243,6 +244,12 @@ const Sales = () => {
     }
   };
 
+  // Filtrar produtos por termo de busca
+  const filteredProducts = products.filter(product =>
+    product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    product.description?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Products Section */}
@@ -255,8 +262,27 @@ const Sales = () => {
           <p className="text-white/70">Selecione os produtos para criar um pedido</p>
         </motion.div>
 
+        {/* Barra de busca */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+        >
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50 h-4 w-4" />
+            <Input
+              type="text"
+              placeholder="Buscar produtos..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50"
+            />
+          </div>
+        </motion.div>
+
+        {/* Produtos */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {products.map((product, index) => (
+          {filteredProducts.map((product, index) => (
             <motion.div
               key={product._id}
               initial={{ opacity: 0, y: 20 }}
@@ -278,32 +304,16 @@ const Sales = () => {
                       </div>
                     )}
                     
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-white">{product.name}</h3>
-                      <p className="text-white/60 text-sm">{product.description}</p>
-                      <div className="flex items-center justify-between">
-                        <p className="text-green-400 font-bold">R$ {product.price.toFixed(2)}</p>
-                        <p className="text-white/50 text-sm">Estoque: {product.stock}</p>
+                                          <div className="flex-1">
+                        <h3 className="font-semibold text-white">{product.name}</h3>
+                        <p className="text-white/60 text-sm">{product.description}</p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-green-400 font-bold">R$ {product.price.toFixed(2)}</p>
+                        </div>
                       </div>
-                    </div>
                     
                     <div
-                      onClick={() => {
-                        console.log('🖱️ CLIQUE DETECTADO no div +');
-                        console.log('🖱️ Produto clicado:', product);
-                        
-                        // Teste direto - sem função
-                        console.log('🧪 TESTE DIRETO - setSelectedProduct');
-                        setSelectedProduct(product);
-                        console.log('🧪 TESTE DIRETO - setIsOrderDialogOpen');
-                        setIsOrderDialogOpen(true);
-                        
-                        // Verificar se o estado foi atualizado
-                        setTimeout(() => {
-                          console.log('🧪 VERIFICAÇÃO - selectedProduct:', selectedProduct);
-                          console.log('🧪 VERIFICAÇÃO - isOrderDialogOpen:', isOrderDialogOpen);
-                        }, 100);
-                      }}
+                      onClick={() => addToOrder(product)}
                       style={{ 
                         padding: '8px 12px', 
                         background: '#3b82f6', 
@@ -327,19 +337,33 @@ const Sales = () => {
           ))}
         </div>
 
-        {products.length === 0 && (
+        {filteredProducts.length === 0 && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className="text-center py-12"
           >
-            <div className="text-6xl mb-4">📦</div>
-            <h3 className="text-xl font-semibold text-white mb-2">
-              Nenhum produto cadastrado
-            </h3>
-            <p className="text-white/60">
-              Cadastre produtos primeiro para começar a vender!
-            </p>
+            {searchTerm.trim() !== '' ? (
+              <>
+                <div className="text-6xl mb-4">🔍</div>
+                <h3 className="text-xl font-semibold text-white mb-2">
+                  Nenhum produto encontrado
+                </h3>
+                <p className="text-white/60">
+                  Tente buscar por outro termo ou verifique a ortografia.
+                </p>
+              </>
+            ) : (
+              <>
+                <div className="text-6xl mb-4">📦</div>
+                <h3 className="text-xl font-semibold text-white mb-2">
+                  Nenhum produto cadastrado
+                </h3>
+                <p className="text-white/60">
+                  Cadastre produtos primeiro para começar a vender!
+                </p>
+              </>
+            )}
           </motion.div>
         )}
       </div>
@@ -375,11 +399,6 @@ const Sales = () => {
               </div>
 
               <div className="space-y-3 max-h-60 overflow-y-auto scrollbar-hide">
-                {/* Debug: mostrar informações do pedido */}
-                <div className="p-2 bg-blue-500/20 rounded text-xs text-blue-300">
-                  Debug: {currentOrder.length} itens no pedido
-                </div>
-                
                 {currentOrder.map((item) => (
                   <div key={item.itemId} className="p-3 rounded-lg bg-white/5 border border-white/10">
                     <div className="flex justify-between items-start mb-2">

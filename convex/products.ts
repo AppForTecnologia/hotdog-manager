@@ -163,28 +163,7 @@ export const getById = query({
   },
 });
 
-/**
- * Query para buscar produtos com estoque baixo
- * Retorna produtos com estoque abaixo de um limite específico
- */
-export const listLowStock = query({
-  args: { threshold: v.number() },
-  handler: async (ctx, args) => {
-    const products = await ctx.db
-      .query("products")
-      .withIndex("by_stock", (q) => q.lt("stock", args.threshold))
-      .filter((q) => 
-        q.and(
-          q.eq(q.field("isActive"), true),
-          q.eq(q.field("deletedAt"), undefined)
-        )
-      )
-      .collect();
 
-    // Ordenar por estoque (menor primeiro)
-    return products.sort((a, b) => a.stock - b.stock);
-  },
-});
 
 /**
  * Query para buscar produto por SKU
@@ -244,7 +223,7 @@ export const create = mutation({
       description: args.description || "",
       price: args.price,
       imageUrl: args.image || "",
-      stock: 0, // Estoque padrão
+
       categoryId: args.categoryId,
       isActive: true,
       createdAt: now,
@@ -332,53 +311,7 @@ export const removeProduct = mutation({
   },
 });
 
-/**
- * Mutation para ajustar estoque de um produto
- * Útil para entradas, saídas e ajustes de inventário
- */
-export const adjustStock = mutation({
-  args: {
-    id: v.id("products"),
-    quantity: v.number(), // Positivo para entrada, negativo para saída
-    reason: v.string(),
-    userId: v.id("users"),
-  },
-  handler: async (ctx, args) => {
-    const product = await ctx.db.get(args.id);
-    
-    if (!product || product.deletedAt) {
-      throw new Error("Produto não encontrado");
-    }
 
-    const previousStock = product.stock;
-    const newStock = previousStock + args.quantity;
-    
-    if (newStock < 0) {
-      throw new Error("Estoque não pode ficar negativo");
-    }
-
-    // Atualizar estoque do produto
-    await ctx.db.patch(args.id, {
-      stock: newStock,
-      updatedAt: Date.now(),
-    });
-
-    // Registrar movimentação de estoque
-    await ctx.db.insert("stockMovements", {
-      productId: args.id,
-      type: args.quantity > 0 ? "entrada" : "saída",
-      quantity: Math.abs(args.quantity),
-      previousStock,
-      newStock,
-      reason: args.reason,
-      userId: args.userId,
-      movementDate: Date.now(),
-      createdAt: Date.now(),
-    });
-
-    return { id: args.id, previousStock, newStock };
-  },
-});
 
 /**
  * Query para buscar produtos por nome (busca parcial)

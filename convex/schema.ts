@@ -67,8 +67,6 @@ export default defineSchema({
     price: v.number(),
     // Preço de custo
     costPrice: v.optional(v.number()),
-    // Quantidade em estoque
-    stock: v.number(),
     // Categoria do produto
     categoryId: v.id("categories"),
     // Código de barras/SKU
@@ -88,7 +86,6 @@ export default defineSchema({
     .index("by_category", ["categoryId"])
     .index("by_active", ["isActive"])
     .index("by_sku", ["sku"])
-    .index("by_stock", ["stock"])
     .index("by_created_at", ["createdAt"]),
 
   /**
@@ -140,42 +137,19 @@ export default defineSchema({
     quantity: v.number(),
     // Subtotal do item
     subtotal: v.number(),
+    // Status de pagamento do item (pendente, pago, parcial)
+    paymentStatus: v.string(),
+    // Valor já pago do item
+    amountPaid: v.number(),
     // Data de criação
     createdAt: v.number(),
   })
     .index("by_sale", ["saleId"])
     .index("by_product", ["productId"])
+    .index("by_payment_status", ["paymentStatus"])
     .index("by_created_at", ["createdAt"]),
 
-  /**
-   * Tabela de movimentações de estoque
-   * Controla entradas e saídas de produtos
-   */
-  stockMovements: defineTable({
-    // ID do produto
-    productId: v.id("products"),
-    // Tipo de movimentação (entrada, saída, ajuste)
-    type: v.string(),
-    // Quantidade movimentada
-    quantity: v.number(),
-    // Quantidade anterior
-    previousStock: v.number(),
-    // Quantidade nova
-    newStock: v.number(),
-    // Motivo da movimentação
-    reason: v.string(),
-    // ID do usuário que fez a movimentação
-    userId: v.id("users"),
-    // Data da movimentação
-    movementDate: v.number(),
-    // Data de criação
-    createdAt: v.number(),
-  })
-    .index("by_product", ["productId"])
-    .index("by_type", ["type"])
-    .index("by_date", ["movementDate"])
-    .index("by_user", ["userId"])
-    .index("by_created_at", ["createdAt"]),
+
 
   /**
    * Tabela de fechamento de caixa
@@ -238,14 +212,19 @@ export default defineSchema({
   paymentMethods: defineTable({
     // ID da venda
     saleId: v.id("sales"),
+    // ID do item específico (opcional - para pagamento por item)
+    saleItemId: v.optional(v.id("saleItems")),
     // Método de pagamento (money, credit, debit, pix)
     method: v.string(),
     // Valor pago com este método
     amount: v.number(),
+    // Nome da pessoa que está pagando (opcional)
+    customerName: v.optional(v.string()),
     // Data de criação
     createdAt: v.number(),
   })
     .index("by_sale", ["saleId"])
+    .index("by_sale_item", ["saleItemId"])
     .index("by_method", ["method"])
     .index("by_created_at", ["createdAt"]),
 
@@ -285,6 +264,36 @@ export default defineSchema({
    * Permite configurar grupos personalizados e sua ordem
    */
   productGroups: defineTable({
+    // Nome do grupo (lanches, bebidas, porcoes, etc.)
+    name: v.string(),
+    // Título exibido na interface
+    title: v.string(),
+    // Ícone do grupo (emoji ou classe CSS)
+    icon: v.string(),
+    // Cor do grupo (hex, rgb, etc.)
+    color: v.string(),
+    // Ordem de exibição (menor número aparece primeiro)
+    order: v.number(),
+    // Se o grupo está ativo
+    isActive: v.boolean(),
+    // Palavras-chave para detecção automática de categorias
+    keywords: v.array(v.string()),
+    // Data de criação
+    createdAt: v.number(),
+    // Data de última atualização
+    updatedAt: v.number(),
+  })
+    .index("by_name", ["name"])
+    .index("by_order", ["order"])
+    .index("by_active", ["isActive"])
+    .index("by_created_at", ["createdAt"]),
+
+  /**
+   * Tabela de configuração de grupos de vendas
+   * Permite configurar grupos personalizados para organização na tela de vendas
+   * com ícones, cores e ordem de exibição
+   */
+  saleGroups: defineTable({
     // Nome do grupo (lanches, bebidas, porcoes, etc.)
     name: v.string(),
     // Título exibido na interface

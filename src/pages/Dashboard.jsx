@@ -227,7 +227,6 @@ const Dashboard = () => {
               <div className="space-y-4">
                 {products.length > 0 ? (
                   products
-                    .filter(product => product.stock > 0)
                     .slice(0, 5)
                     .map((product, index) => (
                       <div key={product._id} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
@@ -236,13 +235,7 @@ const Dashboard = () => {
                           <p className="text-white/60 text-sm">#{index + 1} em estoque</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-white font-bold">{product.stock} unidades</p>
-                          <div className="w-20 h-2 bg-white/20 rounded-full mt-1">
-                            <div 
-                              className="h-full bg-gradient-to-r from-blue-500 to-cyan-600 rounded-full"
-                              style={{ width: `${(product.stock / Math.max(...products.map(p => p.stock))) * 100}%` }}
-                            />
-                          </div>
+
                         </div>
                       </div>
                     ))

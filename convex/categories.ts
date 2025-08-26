@@ -255,49 +255,4 @@ export const searchByName = query({
   },
 });
 
-/**
- * Query para listar categorias com produtos em estoque baixo
- * Útil para identificar categorias que precisam de atenção
- */
-export const listWithLowStockProducts = query({
-  args: { stockThreshold: v.number() },
-  handler: async (ctx, args) => {
-    const categories = await ctx.db
-      .query("categories")
-      .withIndex("by_active", (q) => q.eq("isActive", true))
-      .collect();
 
-    // Ordenar por nome
-    const sortedCategories = categories.sort((a, b) => a.name.localeCompare(b.name));
-
-    // Verificar produtos com estoque baixo para cada categoria
-    const categoriesWithLowStock = await Promise.all(
-      sortedCategories.map(async (category) => {
-        const lowStockProducts = await ctx.db
-          .query("products")
-          .withIndex("by_category", (q) => q.eq("categoryId", category._id))
-          .filter((q) => 
-            q.and(
-              q.eq(q.field("isActive"), true),
-              q.eq(q.field("deletedAt"), undefined),
-              q.lt(q.field("stock"), args.stockThreshold)
-            )
-          )
-          .collect();
-
-        return {
-          ...category,
-          lowStockCount: lowStockProducts.length,
-          lowStockProducts: lowStockProducts.map(p => ({
-            id: p._id,
-            name: p.name,
-            stock: p.stock,
-          })),
-        };
-      })
-    );
-
-    // Filtrar apenas categorias com produtos em estoque baixo
-    return categoriesWithLowStock.filter(cat => cat.lowStockCount > 0);
-  },
-});

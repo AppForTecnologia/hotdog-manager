@@ -46,7 +46,7 @@ export const seed = mutation({
       description: "Pão, salsicha, mostarda e ketchup",
       price: 8.50,
       costPrice: 3.50,
-      stock: 100,
+      
       categoryId: lanchesId,
       sku: "HD001",
       isActive: true,
@@ -59,7 +59,7 @@ export const seed = mutation({
       description: "Pão, 2 salsichas, mostarda e ketchup",
       price: 12.00,
       costPrice: 5.00,
-      stock: 80,
+      
       categoryId: lanchesId,
       sku: "HD002",
       isActive: true,
@@ -72,7 +72,7 @@ export const seed = mutation({
       description: "Coca-Cola, Pepsi ou Sprite",
       price: 4.50,
       costPrice: 2.00,
-      stock: 150,
+      
       categoryId: bebidasId,
       sku: "REF001",
       isActive: true,
@@ -115,6 +115,8 @@ export const seed = mutation({
       unitPrice: 8.50,
       quantity: 1,
       subtotal: 8.50,
+      paymentStatus: "pendente",
+      amountPaid: 0,
       createdAt: now,
     });
 
@@ -125,6 +127,8 @@ export const seed = mutation({
       unitPrice: 12.00,
       quantity: 1,
       subtotal: 12.00,
+      paymentStatus: "pendente",
+      amountPaid: 0,
       createdAt: now,
     });
 
@@ -135,6 +139,8 @@ export const seed = mutation({
       unitPrice: 8.50,
       quantity: 1,
       subtotal: 8.50,
+      paymentStatus: "pendente",
+      amountPaid: 0,
       createdAt: now,
     });
 
@@ -145,6 +151,8 @@ export const seed = mutation({
       unitPrice: 4.50,
       quantity: 1,
       subtotal: 4.50,
+      paymentStatus: "pendente",
+      amountPaid: 0,
       createdAt: now,
     });
 
@@ -195,7 +203,7 @@ export const clearDatabase = mutation({
     const products = await ctx.db.query("products").collect();
     const categories = await ctx.db.query("categories").collect();
     const users = await ctx.db.query("users").collect();
-    const stockMovements = await ctx.db.query("stockMovements").collect();
+
 
     // Deletar em ordem para evitar problemas de referência
     for (const item of saleItems) {
@@ -206,9 +214,7 @@ export const clearDatabase = mutation({
       await ctx.db.delete(sale._id);
     }
     
-    for (const movement of stockMovements) {
-      await ctx.db.delete(movement._id);
-    }
+
     
     for (const product of products) {
       await ctx.db.delete(product._id);
@@ -230,7 +236,7 @@ export const clearDatabase = mutation({
         products: products.length,
         categories: categories.length,
         users: users.length,
-        stockMovements: stockMovements.length,
+
       },
       timestamp: Date.now(),
     };

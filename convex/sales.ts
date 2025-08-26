@@ -125,10 +125,25 @@ export const getSaleWithItems = query({
 export const listByStatus = query({
   args: { status: v.string() },
   handler: async (ctx, args) => {
-    const sales = await ctx.db
-      .query("sales")
-      .withIndex("by_status", (q) => q.eq("status", args.status))
-      .collect();
+    let sales;
+    
+    if (args.status === "pendente") {
+      // Para status pendente, incluir também vendas parcialmente pagas
+      sales = await ctx.db
+        .query("sales")
+        .filter((q) => 
+          q.or(
+            q.eq(q.field("status"), "pendente"),
+            q.eq(q.field("status"), "parcialmente_paga")
+          )
+        )
+        .collect();
+    } else {
+      sales = await ctx.db
+        .query("sales")
+        .withIndex("by_status", (q) => q.eq("status", args.status))
+        .collect();
+    }
 
     // Ordenar por data (mais recentes primeiro)
     return sales.sort((a, b) => b.saleDate - a.saleDate);
@@ -229,14 +244,12 @@ export const create = mutation({
           unitPrice: item.unitPrice,
           quantity: item.quantity,
           subtotal,
+          paymentStatus: "pendente",
+          amountPaid: 0,
           createdAt: now,
         });
 
-        // Atualizar estoque do produto
-        await ctx.db.patch(item.productId, {
-          stock: (await ctx.db.get(item.productId))!.stock - item.quantity,
-          updatedAt: now,
-        });
+
 
         return itemId;
       })
@@ -280,7 +293,7 @@ export const updateStatus = mutation({
         const product = await ctx.db.get(item.productId);
         if (product) {
           await ctx.db.patch(item.productId, {
-            stock: product.stock + item.quantity,
+            
             updatedAt: Date.now(),
           });
         }
@@ -338,7 +351,7 @@ export const updatePaymentAndStatus = mutation({
         const product = await ctx.db.get(item.productId);
         if (product) {
           await ctx.db.patch(item.productId, {
-            stock: product.stock + item.quantity,
+            
             updatedAt: Date.now(),
           });
         }
@@ -618,5 +631,345 @@ export const getTopSellingProducts = query({
     );
 
     return productsWithStats;
+  },
+});
+
+/**
+ * Query para listar produtos agrupados por grupos de vendas
+ * Organiza produtos em grupos com ícones e cores para a tela de vendas
+ */
+export const listProductsGroupedForSales = query({
+  args: {},
+  handler: async (ctx) => {
+    // Buscar grupos de vendas ativos
+    const saleGroups = await ctx.db
+      .query("saleGroups")
+      .withIndex("by_active", (q) => q.eq("isActive", true))
+      .collect();
+
+    // Se não houver grupos, retornar produtos sem agrupamento
+    if (saleGroups.length === 0) {
+      const products = await ctx.db
+        .query("products")
+        .withIndex("by_active", (q) => q.eq("isActive", true))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+        .collect();
+
+      return {
+        "produtos": {
+          title: "Produtos",
+          icon: "📦",
+          color: "#6B7280",
+          products: products.sort((a, b) => a.name.localeCompare(b.name))
+        }
+      };
+    }
+
+    // Ordenar grupos por ordem
+    const sortedGroups = saleGroups.sort((a, b) => a.order - b.order);
+
+    // Buscar todas as categorias ativas
+    const categories = await ctx.db
+      .query("categories")
+      .withIndex("by_active", (q) => q.eq("isActive", true))
+      .collect();
+
+    // Organizar categorias em grupos baseado nas palavras-chave
+    const groups: any = {};
+    const unassignedCategories = [];
+
+    // Inicializar grupos
+    for (const group of sortedGroups) {
+      groups[group.name] = {
+        title: group.title,
+        icon: group.icon,
+        color: group.color,
+        categories: [],
+        products: []
+      };
+    }
+
+    // Associar categorias aos grupos baseado nas palavras-chave
+    for (const category of categories) {
+      let assigned = false;
+      
+      for (const group of sortedGroups) {
+        if (group.keywords.some(keyword => 
+          category.name.toLowerCase().includes(keyword.toLowerCase())
+        )) {
+          groups[group.name].categories.push(category);
+          assigned = true;
+          break;
+        }
+      }
+      
+      if (!assigned) {
+        unassignedCategories.push(category);
+      }
+    }
+
+    // Associar categorias não atribuídas ao primeiro grupo disponível
+    if (unassignedCategories.length > 0 && Object.keys(groups).length > 0) {
+      const firstGroupKey = Object.keys(groups)[0];
+      groups[firstGroupKey].categories.push(...unassignedCategories);
+    }
+
+    // Buscar produtos para cada grupo
+    for (const groupKey of Object.keys(groups)) {
+      const group = groups[groupKey];
+      
+      for (const category of group.categories) {
+        const products = await ctx.db
+          .query("products")
+          .withIndex("by_category", (q) => q.eq("categoryId", category._id))
+          .filter((q) => 
+            q.and(
+              q.eq(q.field("isActive"), true),
+              q.eq(q.field("deletedAt"), undefined)
+            )
+          )
+          .collect();
+
+        // Adicionar informações da categoria aos produtos
+        const productsWithCategory = products.map(product => ({
+          ...product,
+          category: category
+        }));
+
+        group.products.push(...productsWithCategory);
+      }
+
+      // Ordenar produtos por nome
+      group.products.sort((a: any, b: any) => a.name.localeCompare(b.name));
+    }
+
+    return groups;
+  },
+});
+
+/**
+ * Mutation para pagar um item específico
+ * Permite pagamento parcial por item, atualizando status do item e da venda
+ */
+export const payItem = mutation({
+  args: {
+    saleItemId: v.id("saleItems"),
+    paymentMethod: v.string(),
+    amount: v.number(),
+    customerName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const saleItem = await ctx.db.get(args.saleItemId);
+    
+    if (!saleItem) {
+      throw new Error("Item de venda não encontrado");
+    }
+
+    // Validar método de pagamento
+    const validPaymentMethods = ["money", "credit", "debit", "pix"];
+    if (!validPaymentMethods.includes(args.paymentMethod)) {
+      throw new Error("Método de pagamento inválido");
+    }
+
+    // Calcular novo valor pago do item
+    const newAmountPaid = saleItem.amountPaid + args.amount;
+    
+    // Verificar se não está pagando mais que o valor do item
+    if (newAmountPaid > saleItem.subtotal) {
+      throw new Error(`Valor pago (R$ ${newAmountPaid.toFixed(2)}) excede o valor do item (R$ ${saleItem.subtotal.toFixed(2)})`);
+    }
+
+    // Determinar novo status do item
+    let newPaymentStatus = "pendente";
+    if (newAmountPaid >= saleItem.subtotal) {
+      newPaymentStatus = "pago";
+    } else if (newAmountPaid > 0) {
+      newPaymentStatus = "parcial";
+    }
+
+    // Atualizar status do item
+    await ctx.db.patch(args.saleItemId, {
+      paymentStatus: newPaymentStatus,
+      amountPaid: newAmountPaid,
+    });
+
+    // Criar registro de pagamento
+    await ctx.db.insert("paymentMethods", {
+      saleId: saleItem.saleId,
+      saleItemId: args.saleItemId,
+      method: args.paymentMethod,
+      amount: args.amount,
+      customerName: args.customerName,
+      createdAt: Date.now(),
+    });
+
+    // Verificar status geral da venda
+    const allItems = await ctx.db
+      .query("saleItems")
+      .withIndex("by_sale", (q) => q.eq("saleId", saleItem.saleId))
+      .collect();
+
+    const totalItems = allItems.length;
+    const paidItems = allItems.filter(item => item.paymentStatus === "pago").length;
+    const partialItems = allItems.filter(item => item.paymentStatus === "parcial").length;
+    const pendingItems = allItems.filter(item => item.paymentStatus === "pendente").length;
+
+    // Determinar novo status da venda
+    let newSaleStatus = "pendente";
+    if (paidItems === totalItems) {
+      newSaleStatus = "paga";
+    } else if (paidItems > 0 || partialItems > 0) {
+      newSaleStatus = "parcialmente_paga";
+    }
+
+    // Atualizar status da venda
+    await ctx.db.patch(saleItem.saleId, {
+      status: newSaleStatus,
+      updatedAt: Date.now(),
+    });
+
+    return {
+      itemId: args.saleItemId,
+      newPaymentStatus,
+      newAmountPaid,
+      saleStatus: newSaleStatus,
+    };
+  },
+});
+
+/**
+ * Query para buscar itens de venda com status de pagamento
+ * Retorna itens com informações de pagamento para a interface
+ */
+export const getSaleItemsWithPaymentStatus = query({
+  args: { saleId: v.id("sales") },
+  handler: async (ctx, args) => {
+    const items = await ctx.db
+      .query("saleItems")
+      .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
+      .collect();
+
+    // Buscar pagamentos para cada item
+    const itemsWithPayments = await Promise.all(
+      items.map(async (item) => {
+        const payments = await ctx.db
+          .query("paymentMethods")
+          .withIndex("by_sale_item", (q) => q.eq("saleItemId", item._id))
+          .collect();
+
+        return {
+          ...item,
+          payments,
+        };
+      })
+    );
+
+    return itemsWithPayments;
+  },
+});
+
+/**
+ * Query para buscar resumo de pagamentos de uma venda
+ * Retorna estatísticas de pagamento para a interface
+ */
+export const getSalePaymentSummary = query({
+  args: { saleId: v.id("sales") },
+  handler: async (ctx, args) => {
+    const items = await ctx.db
+      .query("saleItems")
+      .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
+      .collect();
+
+    const totalItems = items.length;
+    const paidItems = items.filter(item => item.paymentStatus === "pago").length;
+    const partialItems = items.filter(item => item.paymentStatus === "parcial").length;
+    const pendingItems = items.filter(item => item.paymentStatus === "pendente").length;
+
+    const totalAmount = items.reduce((sum, item) => sum + item.subtotal, 0);
+    const totalPaid = items.reduce((sum, item) => sum + item.amountPaid, 0);
+    const totalPending = totalAmount - totalPaid;
+
+    return {
+      summary: {
+        totalItems,
+        paidItems,
+        partialItems,
+        pendingItems,
+        totalAmount,
+        totalPaid,
+        totalPending,
+      },
+    };
+  },
+});
+
+/**
+ * Mutation para estornar pagamento de um item
+ * Permite cancelar pagamentos incorretos
+ */
+export const refundItemPayment = mutation({
+  args: {
+    paymentId: v.id("paymentMethods"),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const payment = await ctx.db.get(args.paymentId);
+    
+    if (!payment) {
+      throw new Error("Pagamento não encontrado");
+    }
+
+    if (!payment.saleItemId) {
+      throw new Error("Este pagamento não é de um item específico");
+    }
+
+    const saleItem = await ctx.db.get(payment.saleItemId);
+    if (!saleItem) {
+      throw new Error("Item de venda não encontrado");
+    }
+
+    // Calcular novo valor pago
+    const newAmountPaid = Math.max(0, saleItem.amountPaid - payment.amount);
+    
+    // Determinar novo status de pagamento
+    let newPaymentStatus = "pendente";
+    if (newAmountPaid >= saleItem.subtotal) {
+      newPaymentStatus = "pago";
+    } else if (newAmountPaid > 0) {
+      newPaymentStatus = "parcial";
+    }
+
+    // Atualizar item com novo status de pagamento
+    await ctx.db.patch(payment.saleItemId, {
+      paymentStatus: newPaymentStatus,
+      amountPaid: newAmountPaid,
+    });
+
+    // Remover o pagamento
+    await ctx.db.delete(args.paymentId);
+
+    // Verificar se a venda ainda está paga
+    const allItems = await ctx.db
+      .query("saleItems")
+      .withIndex("by_sale", (q) => q.eq("saleId", saleItem.saleId))
+      .collect();
+
+    const allItemsPaid = allItems.every(item => item.paymentStatus === "pago");
+    
+    // Se não todos os itens estão pagos, voltar venda para pendente
+    if (!allItemsPaid) {
+      await ctx.db.patch(saleItem.saleId, {
+        status: "pendente",
+        updatedAt: Date.now(),
+      });
+    }
+
+    return { 
+      saleItemId: payment.saleItemId, 
+      newPaymentStatus, 
+      newAmountPaid,
+      refundedAmount: payment.amount,
+      allItemsPaid 
+    };
   },
 });
