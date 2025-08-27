@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Minus, ShoppingCart, Trash2, Settings, ArrowUp, ArrowDown, Search } from 'lucide-react';
+import { Plus, Minus, ShoppingCart, Trash2, Settings, ArrowUp, ArrowDown, Search, MapPin, User, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,6 +18,7 @@ const Sales = () => {
   const { user } = useUser();
   const products = useQuery(api.products.listActive) || [];
   const users = useQuery(api.users.listActive) || [];
+  const customers = useQuery(api.customers.listActive) || [];
   const createSale = useMutation(api.sales.create);
   const createOrUpdateUser = useMutation(api.users.createOrUpdateFromClerk);
   
@@ -26,11 +27,14 @@ const Sales = () => {
 
   const [currentOrder, setCurrentOrder] = useState([]);
   const [tableNumber, setTableNumber] = useState('');
+  const [saleType, setSaleType] = useState('local'); // 'local' ou 'delivery'
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [isOrderDialogOpen, setIsOrderDialogOpen] = useState(false);
   const [itemNotes, setItemNotes] = useState('');
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [customerSearchTerm, setCustomerSearchTerm] = useState('');
 
   // Encontrar o usuário atual no banco
   const currentUser = users.find(u => u.clerkId === user?.id);
@@ -42,7 +46,7 @@ const Sales = () => {
   console.log('  - Users do banco:', users);
   console.log('  - Current user encontrado:', currentUser);
   
-  // Criar usuário automaticamente se não existir
+  // Criar usuário automaticamente se não existir (silenciosamente)
   useEffect(() => {
     if (user && !currentUser && users.length >= 0) {
       console.log('🆕 Criando usuário automaticamente...');
@@ -53,10 +57,7 @@ const Sales = () => {
         role: 'vendedor'
       }).then(() => {
         console.log('✅ Usuário criado com sucesso!');
-        toast({
-          title: "Usuário criado!",
-          description: "Seu usuário foi criado automaticamente no sistema."
-        });
+        // Removido o toast para não incomodar o usuário
       }).catch((error) => {
         console.error('❌ Erro ao criar usuário:', error);
         toast({
@@ -185,10 +186,20 @@ const Sales = () => {
       return;
     }
 
-    if (!tableNumber) {
+    // Validações específicas por tipo de venda
+    if (saleType === 'local' && !tableNumber) {
       toast({
         title: "Erro",
         description: "Informe o número da mesa/comanda!",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (saleType === 'delivery' && !selectedCustomer) {
+      toast({
+        title: "Erro",
+        description: "Selecione um cliente para o delivery!",
         variant: "destructive"
       });
       return;
@@ -214,23 +225,39 @@ const Sales = () => {
         quantity: item.quantity
       }));
 
+      // Preparar notas baseadas no tipo de venda
+      let notes = '';
+      if (saleType === 'local') {
+        notes = `Mesa: ${tableNumber}`;
+      } else {
+        notes = `Delivery - Cliente: ${selectedCustomer.name}`;
+      }
+
       // Criar a venda no Convex
       await createSale({
         userId: currentUser._id,
         clerkUserId: user.id,
         items,
         paymentMethod: "pendente",
-        notes: `Mesa: ${tableNumber}`,
+        saleType: saleType,
+        customerId: selectedCustomer?._id,
+        notes: notes,
         discount: 0
       });
 
       // Limpar o pedido
       setCurrentOrder([]);
       setTableNumber('');
+      setSelectedCustomer(null);
+      setSaleType('local');
+      
+      const successMessage = saleType === 'local' 
+        ? `Pedido para mesa ${tableNumber} foi criado com sucesso.`
+        : `Pedido de delivery para ${selectedCustomer.name} foi criado com sucesso.`;
       
       toast({
         title: "Pedido criado!",
-        description: `Pedido para mesa ${tableNumber} foi criado com sucesso.`
+        description: successMessage
       });
     } catch (error) {
       console.error("Erro ao criar pedido:", error);
@@ -248,6 +275,13 @@ const Sales = () => {
   const filteredProducts = products.filter(product =>
     product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     product.description?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Filtrar clientes por termo de busca
+  const filteredCustomers = customers.filter(customer =>
+    customer.name.toLowerCase().includes(customerSearchTerm.toLowerCase()) ||
+    customer.phone.includes(customerSearchTerm) ||
+    customer.address.toLowerCase().includes(customerSearchTerm.toLowerCase())
   );
 
   return (
@@ -387,16 +421,143 @@ const Sales = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {/* Tipo de Venda */}
               <div>
-                <Label htmlFor="table" className="text-white">Mesa/Comanda</Label>
-                <Input
-                  id="table"
-                  value={tableNumber}
-                  onChange={(e) => setTableNumber(e.target.value)}
-                  placeholder="Ex: Mesa 5"
-                  className="bg-white/10 border-white/20 text-white placeholder:text-white/50"
-                />
+                <Label className="text-white mb-2 block">Tipo de Venda</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant={saleType === 'local' ? 'default' : 'outline'}
+                    onClick={() => {
+                      setSaleType('local');
+                      setSelectedCustomer(null);
+                      setCustomerSearchTerm('');
+                    }}
+                    className={`w-full ${
+                      saleType === 'local' 
+                        ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                        : 'bg-white/10 border-white/20 text-white hover:bg-white/20'
+                    }`}
+                  >
+                    🏪 Local
+                  </Button>
+                  <Button
+                    variant={saleType === 'delivery' ? 'default' : 'outline'}
+                    onClick={() => setSaleType('delivery')}
+                    className={`w-full ${
+                      saleType === 'delivery' 
+                        ? 'bg-green-600 hover:bg-green-700 text-white' 
+                        : 'bg-white/10 border-white/20 text-white hover:bg-white/20'
+                    }`}
+                  >
+                    🚚 Delivery
+                  </Button>
+                </div>
               </div>
+
+              {/* Campo Mesa (apenas para vendas locais) */}
+              {saleType === 'local' && (
+                <div>
+                  <Label htmlFor="table" className="text-white">Mesa/Comanda</Label>
+                  <Input
+                    id="table"
+                    value={tableNumber}
+                    onChange={(e) => setTableNumber(e.target.value)}
+                    placeholder="Ex: Mesa 5"
+                    className="bg-white/10 border-white/20 text-white placeholder:text-white/50"
+                  />
+                </div>
+              )}
+
+              {/* Seleção de Cliente (apenas para delivery) */}
+              {saleType === 'delivery' && (
+                <div>
+                  <Label className="text-white">Cliente para Delivery</Label>
+                  {selectedCustomer ? (
+                    <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <User className="h-4 w-4 text-green-400" />
+                          <div>
+                            <p className="text-white font-medium">{selectedCustomer.name}</p>
+                            <p className="text-white/60 text-sm">{selectedCustomer.phone}</p>
+                            <p className="text-white/70 text-xs">{selectedCustomer.address}</p>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setSelectedCustomer(null)}
+                          className="text-red-400 hover:bg-red-500/10"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {/* Barra de busca para clientes */}
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50 h-4 w-4" />
+                        <Input
+                          type="text"
+                          placeholder="Buscar por nome, telefone ou endereço..."
+                          value={customerSearchTerm}
+                          onChange={(e) => setCustomerSearchTerm(e.target.value)}
+                          className="w-full pl-10 bg-white/10 border-white/20 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50"
+                        />
+                      </div>
+                      
+                      <div className="max-h-32 overflow-y-auto space-y-1">
+                        {filteredCustomers.map((customer) => (
+                          <div
+                            key={customer._id}
+                            className="p-2 bg-white/5 border border-white/10 rounded cursor-pointer hover:bg-white/10 transition-colors"
+                            onClick={() => {
+                              setSelectedCustomer(customer);
+                              setCustomerSearchTerm('');
+                            }}
+                          >
+                            <div className="flex items-center gap-2">
+                              <User className="h-4 w-4 text-blue-400" />
+                              <div className="flex-1">
+                                <p className="text-white font-medium text-sm">{customer.name}</p>
+                                <p className="text-white/60 text-xs">{customer.phone}</p>
+                                {customer.address && (
+                                  <p className="text-white/50 text-xs truncate">{customer.address}</p>
+                                )}
+                              </div>
+                              <MapPin className="h-3 w-3 text-orange-400" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      
+                      {customers.length === 0 && (
+                        <div className="text-center py-4">
+                          <p className="text-white/50 text-sm">Nenhum cliente cadastrado</p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="mt-2 border-blue-500/50 text-blue-400 hover:bg-blue-500/10"
+                          >
+                            Cadastrar Cliente
+                          </Button>
+                        </div>
+                      )}
+                      
+                      {customers.length > 0 && filteredCustomers.length === 0 && (
+                        <div className="text-center py-4">
+                          <div className="text-4xl mb-2">🔍</div>
+                          <p className="text-white/50 text-sm">Nenhum cliente encontrado</p>
+                          <p className="text-white/40 text-xs">
+                            Tente buscar por outro termo
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-3 max-h-60 overflow-y-auto scrollbar-hide">
                 {currentOrder.map((item) => (

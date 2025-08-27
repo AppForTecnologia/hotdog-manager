@@ -105,6 +105,10 @@ export default defineSchema({
     paymentMethod: v.string(),
     // Status da venda (pendente, paga, cancelada)
     status: v.string(),
+    // Tipo de venda (local, delivery)
+    saleType: v.string(),
+    // ID do cliente (apenas para delivery)
+    customerId: v.optional(v.id("customers")),
     // Observações da venda
     notes: v.optional(v.string()),
     // Data da venda
@@ -315,6 +319,33 @@ export default defineSchema({
   })
     .index("by_name", ["name"])
     .index("by_order", ["order"])
+    .index("by_active", ["isActive"])
+    .index("by_created_at", ["createdAt"]),
+
+  /**
+   * Tabela de clientes para delivery
+   * Armazena informações dos clientes que fazem pedidos por delivery
+   */
+  customers: defineTable({
+    // Nome completo do cliente
+    name: v.string(),
+    // Número de telefone
+    phone: v.string(),
+    // Endereço completo
+    address: v.string(),
+    // Observações adicionais (ponto de referência, etc.)
+    notes: v.optional(v.string()),
+    // Se o cliente está ativo
+    isActive: v.boolean(),
+    // Data de criação
+    createdAt: v.number(),
+    // Data de última atualização
+    updatedAt: v.number(),
+    // Data de exclusão (soft delete)
+    deletedAt: v.optional(v.number()),
+  })
+    .index("by_name", ["name"])
+    .index("by_phone", ["phone"])
     .index("by_active", ["isActive"])
     .index("by_created_at", ["createdAt"]),
 });

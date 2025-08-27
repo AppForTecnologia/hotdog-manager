@@ -7,6 +7,7 @@ import Layout from '@/components/Layout';
 import Dashboard from '@/pages/Dashboard';
 import Products from '@/pages/Products';
 import Sales from '@/pages/Sales';
+import Customers from '@/pages/Customers';
 import Payment from '@/pages/Payment';
 import CashRegister from '@/pages/CashRegister';
 import Reports from '@/pages/Reports';
@@ -51,6 +52,7 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/products" element={<Products />} />
               <Route path="/sales" element={<Sales />} />
+              <Route path="/customers" element={<Customers />} />
               <Route path="/production" element={<Production />} />
               <Route path="/payment" element={<Payment />} />
               <Route path="/cash-register" element={<CashRegister />} />

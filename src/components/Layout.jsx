@@ -10,7 +10,8 @@ import {
   BarChart3, 
   Menu,
   X,
-  ChefHat
+  ChefHat,
+  Users
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { UserButton } from '@clerk/clerk-react';
@@ -51,6 +52,7 @@ const Layout = ({ children }) => {
     { name: 'Dashboard', href: '/', icon: Home },
     { name: 'Produtos', href: '/products', icon: Package },
     { name: 'Vendas', href: '/sales', icon: ShoppingCart },
+    { name: 'Clientes', href: '/customers', icon: Users },
     { name: 'Produção', href: '/production', icon: ChefHat },
     { name: 'Pagamento', href: '/payment', icon: CreditCard },
     { name: 'Caixa', href: '/cash-register', icon: Calculator },

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { CreditCard, Banknote, Smartphone, DollarSign, Check, X, ShoppingCart, Minus } from 'lucide-react';
+import { Check, X, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -126,17 +126,6 @@ const Payment = () => {
       pix: 'PIX'
     };
     return methods[method] || method;
-  };
-
-  const getPaymentMethodIcon = (method) => {
-    const icons = {
-      money: Banknote,
-      credit: CreditCard,
-      debit: Minus,
-      pix: Smartphone
-    };
-    const Icon = icons[method] || DollarSign;
-    return <Icon className="h-4 w-4" />;
   };
 
   const processPayment = async () => {
@@ -266,7 +255,7 @@ const Payment = () => {
               <p className="text-white/70">Selecione um pedido para processar o pagamento</p>
             </motion.div>
 
-            <div className="space-y-4 max-h-96 overflow-y-auto scrollbar-hide">
+            <div className="space-y-4 max-h-96 overflow-y-auto scrollbar-hide p-1">
               {orders.map((order, index) => (
                 <motion.div
                   key={order._id}
@@ -456,22 +445,18 @@ const Payment = () => {
                 <Tabs value={currentPayment.method} onValueChange={(value) => 
                   setCurrentPayment({ ...currentPayment, method: value })
                 }>
-                  <TabsList className="grid w-full grid-cols-4 bg-white/10">
-                    <TabsTrigger value="money" className="text-white flex flex-col items-center space-y-1 p-2">
-                      <Banknote className="h-4 w-4" />
-                      <span className="text-xs">Dinheiro</span>
+                  <TabsList className="grid w-full grid-cols-4 bg-white/10 h-12">
+                    <TabsTrigger value="money" className="text-white data-[state=active]:bg-white/20 h-full">
+                      Dinheiro
                     </TabsTrigger>
-                    <TabsTrigger value="credit" className="text-white flex flex-col items-center space-y-1 p-2">
-                      <CreditCard className="h-4 w-4" />
-                      <span className="text-xs">Crédito</span>
+                    <TabsTrigger value="credit" className="text-white data-[state=active]:bg-white/20 h-full">
+                      Crédito
                     </TabsTrigger>
-                    <TabsTrigger value="debit" className="text-white flex flex-col items-center space-y-1 p-2">
-                      <CreditCard className="h-4 w-4" />
-                      <span className="text-xs">Débito</span>
+                    <TabsTrigger value="debit" className="text-white data-[state=active]:bg-white/20 h-full">
+                      Débito
                     </TabsTrigger>
-                    <TabsTrigger value="pix" className="text-white flex flex-col items-center space-y-1 p-2">
-                      <Smartphone className="h-4 w-4" />
-                      <span className="text-xs">PIX</span>
+                    <TabsTrigger value="pix" className="text-white data-[state=active]:bg-white/20 h-full">
+                      PIX
                     </TabsTrigger>
                   </TabsList>
                 </Tabs>
@@ -496,7 +481,6 @@ const Payment = () => {
                     {paymentMethods.map((payment) => (
                       <div key={payment.id} className="flex items-center justify-between p-2 rounded bg-white/5">
                         <div className="flex items-center space-x-2">
-                          {getPaymentMethodIcon(payment.method)}
                           <span className="text-white">{getPaymentMethodName(payment.method)}</span>
                         </div>
                         <div className="flex items-center space-x-2">

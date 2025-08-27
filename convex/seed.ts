@@ -80,6 +80,57 @@ export const seed = mutation({
       updatedAt: now,
     });
 
+    // Criar clientes de exemplo
+    await ctx.db.insert("customers", {
+      name: "João Silva",
+      phone: "(11) 99999-1111",
+      address: "Rua das Flores, 123 - Vila Madalena",
+      notes: "Próximo ao metrô",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await ctx.db.insert("customers", {
+      name: "Maria Santos",
+      phone: "(11) 99999-2222",
+      address: "Av. Paulista, 456 - Bela Vista",
+      notes: "Edifício comercial",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await ctx.db.insert("customers", {
+      name: "Pedro Oliveira",
+      phone: "(11) 99999-3333",
+      address: "Rua Augusta, 789 - Consolação",
+      notes: "Apto 45",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await ctx.db.insert("customers", {
+      name: "Ana Costa",
+      phone: "(11) 99999-4444",
+      address: "Rua Oscar Freire, 321 - Jardins",
+      notes: "Casa com portão",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await ctx.db.insert("customers", {
+      name: "Carlos Ferreira",
+      phone: "(11) 99999-5555",
+      address: "Av. Brigadeiro Faria Lima, 654 - Pinheiros",
+      notes: "Prédio azul, portaria 24h",
+      isActive: true,
+      createdAt: now,
+      updatedAt: now,
+    });
+
     // Criar vendas de exemplo
     const venda1Id = await ctx.db.insert("sales", {
       userId,
@@ -87,6 +138,7 @@ export const seed = mutation({
       total: 21.00,
       discount: 0,
       paymentMethod: "dinheiro",
+      saleType: "local",
       status: "pendente",
       notes: "Mesa: Mesa 1",
       saleDate: now,
@@ -100,6 +152,7 @@ export const seed = mutation({
       total: 16.50,
       discount: 0,
       paymentMethod: "cartao",
+      saleType: "local",
       status: "pendente",
       notes: "Mesa: Mesa 2",
       saleDate: now,
@@ -180,6 +233,7 @@ export const seed = mutation({
       users: 1,
       categories: 2,
       products: 3,
+      customers: 5,
       sales: 2,
       saleItems: 4,
       productionItems: 1,
