@@ -977,3 +977,71 @@ export const refundItemPayment = mutation({
     };
   },
 });
+
+/**
+ * Query para buscar itens de venda com informações de produtos
+ * Retorna itens de venda com dados completos para análise de relatórios
+ */
+export const getSaleItemsWithProducts = query({
+  args: { 
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number())
+  },
+  handler: async (ctx, args) => {
+    let sales;
+    
+    // Aplicar filtros de data se fornecidos
+    if (args.startDate && args.endDate) {
+      sales = await ctx.db
+        .query("sales")
+        .withIndex("by_date", (q) => 
+          q.gte("saleDate", args.startDate!)
+        )
+        .collect();
+    } else {
+      sales = await ctx.db.query("sales").collect();
+    }
+    
+    // Filtrar por data final se fornecida
+    let filteredSales = sales;
+    if (args.endDate) {
+      filteredSales = sales.filter(sale => sale.saleDate <= args.endDate!);
+    }
+
+    // Buscar itens de venda para todas as vendas filtradas
+    const allItems = await Promise.all(
+      filteredSales.map(async (sale) => {
+        const items = await ctx.db
+          .query("saleItems")
+          .withIndex("by_sale", (q) => q.eq("saleId", sale._id))
+          .collect();
+
+        return items.map(item => ({
+          ...item,
+          saleDate: sale.saleDate,
+          saleType: sale.saleType,
+          paymentMethod: sale.paymentMethod
+        }));
+      })
+    );
+
+    // Flatten array de itens
+    const flatItems = allItems.flat();
+
+    // Buscar informações dos produtos para cada item
+    const itemsWithProducts = await Promise.all(
+      flatItems.map(async (item) => {
+        const product = await ctx.db.get(item.productId);
+        const category = product ? await ctx.db.get(product.categoryId) : null;
+        
+        return {
+          ...item,
+          product,
+          category
+        };
+      })
+    );
+
+    return itemsWithProducts;
+  },
+});

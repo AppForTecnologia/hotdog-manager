@@ -11,7 +11,8 @@ import {
   Menu,
   X,
   ChefHat,
-  Users
+  Users,
+  ClipboardList
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { UserButton } from '@clerk/clerk-react';
@@ -54,6 +55,7 @@ const Layout = ({ children }) => {
     { name: 'Vendas', href: '/sales', icon: ShoppingCart },
     { name: 'Clientes', href: '/customers', icon: Users },
     { name: 'Produção', href: '/production', icon: ChefHat },
+    { name: 'Pedidos', href: '/orders', icon: ClipboardList },
     { name: 'Pagamento', href: '/payment', icon: CreditCard },
     { name: 'Caixa', href: '/cash-register', icon: Calculator },
     { name: 'Relatórios', href: '/reports', icon: BarChart3 },

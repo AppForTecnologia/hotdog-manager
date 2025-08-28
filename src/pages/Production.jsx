@@ -45,9 +45,8 @@ const statusConfig = {
 const statusTransitions = {
   pendente: ['em_producao'],
   em_producao: ['concluido'],
-  concluido: ['entregue'],
-  // Para bebidas, "concluido" é exibido como "pronto" mas internamente é "concluido"
-  // então a transição de "concluido" para "entregue" funciona para ambos
+  concluido: [], // Não permite ir para "entregue" na tela de produção
+  // Para bebidas, "concluido" é exibido como "pronto" e não tem próximo status
   entregue: []
 };
 
@@ -69,8 +68,8 @@ const ProductionItem = ({ item, onStatusChange, isFirstItem }) => {
   // Para bebidas, determinar o próximo status baseado no status real, não no exibido
   let nextStatus;
   if (isBeverage && item.productionStatus === "concluido") {
-    // Bebidas "concluido" (exibidas como "pronto") podem ir para "entregue"
-    nextStatus = "entregue";
+    // Bebidas "concluido" (exibidas como "pronto") NÃO podem ir para "entregue" na tela de produção
+    nextStatus = null;
   } else {
     nextStatus = statusTransitions[item.productionStatus]?.[0];
   }
@@ -172,7 +171,6 @@ const ProductionItem = ({ item, onStatusChange, isFirstItem }) => {
           <nextStatusInfo.icon className="h-4 w-4 mr-2" />
           {nextStatus === 'em_producao' && 'Iniciar Produção'}
           {nextStatus === 'concluido' && 'Marcar Concluído'}
-          {nextStatus === 'entregue' && 'Marcar Entregue'}
         </Button>
       )}
 
@@ -204,7 +202,6 @@ const Production = () => {
   const defaultUser = useQuery(api.production.getDefaultUser);
   const startProduction = useMutation(api.production.startProduction);
   const completeProduction = useMutation(api.production.completeProduction);
-  const deliverItem = useMutation(api.production.deliverItem);
   const revertStatus = useMutation(api.production.revertProductionStatus);
 
   /**
@@ -219,37 +216,28 @@ const Production = () => {
       
       let result;
       
-      // Para bebidas, quando clicar em "Marcar Entregue", usar status "entregue"
-      // mas internamente o item pode estar com status "concluido"
-      if (newStatus === 'entregue') {
-        result = await deliverItem({ 
-          saleItemId: itemId, 
-          ...(userId && { userId }) 
-        });
-      } else {
-        switch (newStatus) {
-          case 'em_producao':
-            result = await startProduction({ 
-              saleItemId: itemId, 
-              ...(userId && { userId }) 
-            });
-            break;
-          case 'concluido':
-            result = await completeProduction({ 
-              saleItemId: itemId, 
-              ...(userId && { userId }) 
-            });
-            break;
-          case 'pendente':
-            result = await revertStatus({ 
-              saleItemId: itemId, 
-              newStatus: 'pendente', 
-              ...(userId && { userId }) 
-            });
-            break;
-          default:
-            throw new Error('Status inválido');
-        }
+      switch (newStatus) {
+        case 'em_producao':
+          result = await startProduction({ 
+            saleItemId: itemId, 
+            ...(userId && { userId }) 
+          });
+          break;
+        case 'concluido':
+          result = await completeProduction({ 
+            saleItemId: itemId, 
+            ...(userId && { userId }) 
+          });
+          break;
+        case 'pendente':
+          result = await revertStatus({ 
+            saleItemId: itemId, 
+            newStatus: 'pendente', 
+            ...(userId && { userId }) 
+          });
+          break;
+        default:
+          throw new Error('Status inválido');
       }
       
       toast({
@@ -283,7 +271,7 @@ const Production = () => {
       >
         <div>
           <h1 className="text-2xl font-bold text-white">Tela de Produção</h1>
-          <p className="text-white/70">Acompanhe os pedidos em tempo real</p>
+          <p className="text-white/70">Controle o status dos pedidos até "Pronto" - itens prontos somem automaticamente</p>
         </div>
         <div className="relative w-full sm:w-auto">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/50 h-4 w-4" />
@@ -341,7 +329,7 @@ const Production = () => {
             >
               <ChefHat className="h-16 w-16 mx-auto text-white/50 mb-4" />
               <h3 className="text-2xl font-bold text-white">Nenhum pedido em produção</h3>
-              <p className="text-white/70">Aguardando novos pedidos da tela de vendas.</p>
+              <p className="text-white/70">Todos os pedidos estão prontos ou aguardando novos pedidos da tela de vendas.</p>
             </motion.div>
           </div>
         )}

@@ -94,10 +94,26 @@ export const listProductionItems = query({
       })
     );
 
-    // Filtrar apenas vendas que têm itens não entregues
+    // Filtrar apenas vendas que têm itens não entregues E não concluídos
+    // Itens "concluido" (Pronto) não aparecem na tela de produção
     return productionOrders.filter(order => 
-      order.items.some(item => item.productionStatus !== "entregue")
+      order.items.some(item => 
+        item.productionStatus !== "entregue" && 
+        item.productionStatus !== "concluido"
+      )
     );
+  },
+});
+
+/**
+ * Query para listar todos os itens de produção de forma simples
+ * Usado na página de acompanhamento de pedidos
+ */
+export const getAllProductionItems = query({
+  args: {},
+  handler: async (ctx) => {
+    const productionItems = await ctx.db.query("productionItems").collect();
+    return productionItems;
   },
 });
 

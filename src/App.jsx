@@ -12,6 +12,7 @@ import Payment from '@/pages/Payment';
 import CashRegister from '@/pages/CashRegister';
 import Reports from '@/pages/Reports';
 import Production from '@/pages/Production';
+import Orders from '@/pages/Orders';
 
 function App() {
   return (
@@ -54,6 +55,7 @@ function App() {
               <Route path="/sales" element={<Sales />} />
               <Route path="/customers" element={<Customers />} />
               <Route path="/production" element={<Production />} />
+              <Route path="/orders" element={<Orders />} />
               <Route path="/payment" element={<Payment />} />
               <Route path="/cash-register" element={<CashRegister />} />
               <Route path="/reports" element={<Reports />} />
