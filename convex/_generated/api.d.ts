@@ -15,6 +15,7 @@ import type {
 } from "convex/server";
 import type * as cashRegister from "../cashRegister.js";
 import type * as categories from "../categories.js";
+import type * as cnpjs from "../cnpjs.js";
 import type * as customers from "../customers.js";
 import type * as productGroups from "../productGroups.js";
 import type * as production from "../production.js";
@@ -35,6 +36,7 @@ import type * as users from "../users.js";
 declare const fullApi: ApiFromModules<{
   cashRegister: typeof cashRegister;
   categories: typeof categories;
+  cnpjs: typeof cnpjs;
   customers: typeof customers;
   productGroups: typeof productGroups;
   production: typeof production;

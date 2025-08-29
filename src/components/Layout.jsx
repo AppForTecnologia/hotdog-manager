@@ -12,10 +12,11 @@ import {
   X,
   ChefHat,
   Users,
-  ClipboardList
+  ClipboardList,
+  Building2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { UserButton } from '@clerk/clerk-react';
+import { UserButton, useUser } from '@clerk/clerk-react';
 
 const Sidebar = ({ navigation, location, onLinkClick }) => (
   <div className="flex flex-col h-full">
@@ -48,6 +49,10 @@ const Sidebar = ({ navigation, location, onLinkClick }) => (
 const Layout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
+  const { user } = useUser();
+
+  // Verificar se o usuário é Master (temporariamente desabilitado)
+  const isMaster = false; // Temporariamente false para evitar erros
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: Home },
@@ -59,6 +64,8 @@ const Layout = ({ children }) => {
     { name: 'Pagamento', href: '/payment', icon: CreditCard },
     { name: 'Caixa', href: '/cash-register', icon: Calculator },
     { name: 'Relatórios', href: '/reports', icon: BarChart3 },
+    // Adicionar navegação para usuários Master
+    ...(isMaster ? [{ name: 'Gerenciar CNPJs', href: '/cnpj-management', icon: Building2 }] : []),
   ];
 
   return (

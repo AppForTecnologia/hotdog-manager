@@ -4,6 +4,8 @@ import { Helmet } from 'react-helmet';
 import { SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/clerk-react';
 import { Toaster } from '@/components/ui/toaster';
 import Layout from '@/components/Layout';
+import CnpjAccessGuard from '@/components/CnpjAccessGuard';
+import MasterUserSetup from '@/components/MasterUserSetup';
 import Dashboard from '@/pages/Dashboard';
 import Products from '@/pages/Products';
 import Sales from '@/pages/Sales';
@@ -13,6 +15,7 @@ import CashRegister from '@/pages/CashRegister';
 import Reports from '@/pages/Reports';
 import Production from '@/pages/Production';
 import Orders from '@/pages/Orders';
+import CnpjManagement from '@/pages/CnpjManagement';
 
 function App() {
   return (
@@ -49,16 +52,18 @@ function App() {
         
         <SignedIn>
           <Layout>
+            <MasterUserSetup />
             <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/products" element={<Products />} />
-              <Route path="/sales" element={<Sales />} />
-              <Route path="/customers" element={<Customers />} />
-              <Route path="/production" element={<Production />} />
-              <Route path="/orders" element={<Orders />} />
-              <Route path="/payment" element={<Payment />} />
-              <Route path="/cash-register" element={<CashRegister />} />
-              <Route path="/reports" element={<Reports />} />
+              <Route path="/" element={<CnpjAccessGuard><Dashboard /></CnpjAccessGuard>} />
+              <Route path="/products" element={<CnpjAccessGuard><Products /></CnpjAccessGuard>} />
+              <Route path="/sales" element={<CnpjAccessGuard><Sales /></CnpjAccessGuard>} />
+              <Route path="/customers" element={<CnpjAccessGuard><Customers /></CnpjAccessGuard>} />
+              <Route path="/production" element={<CnpjAccessGuard><Production /></CnpjAccessGuard>} />
+              <Route path="/orders" element={<CnpjAccessGuard><Orders /></CnpjAccessGuard>} />
+              <Route path="/payment" element={<CnpjAccessGuard><Payment /></CnpjAccessGuard>} />
+              <Route path="/cash-register" element={<CnpjAccessGuard><CashRegister /></CnpjAccessGuard>} />
+              <Route path="/reports" element={<CnpjAccessGuard><Reports /></CnpjAccessGuard>} />
+              <Route path="/cnpj-management" element={<CnpjManagement />} />
             </Routes>
             <Toaster />
           </Layout>

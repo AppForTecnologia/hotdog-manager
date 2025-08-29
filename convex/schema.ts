@@ -348,4 +348,65 @@ export default defineSchema({
     .index("by_phone", ["phone"])
     .index("by_active", ["isActive"])
     .index("by_created_at", ["createdAt"]),
+
+  /**
+   * Tabela para gerenciar CNPJs e suas configurações
+   * Cada CNPJ representa uma empresa/tenant diferente
+   */
+  cnpjs: defineTable({
+    cnpj: v.string(), // CNPJ da empresa (formato: XX.XXX.XXX/XXXX-XX)
+    companyName: v.string(), // Nome da empresa
+    email: v.string(), // Email de contato da empresa
+    phone: v.optional(v.string()), // Telefone de contato
+    address: v.optional(v.string()), // Endereço da empresa
+    plan: v.string(), // Plano contratado (basic, premium, enterprise)
+    status: v.string(), // Status: active, suspended, expired
+    createdAt: v.number(), // Data de criação
+    updatedAt: v.number(), // Data da última atualização
+    expiresAt: v.number(), // Data de expiração do plano
+    createdBy: v.id("users"), // Usuário Master que criou
+    notes: v.optional(v.string()), // Observações adicionais
+  })
+    .index("by_cnpj", ["cnpj"])
+    .index("by_status", ["status"])
+    .index("by_expiration", ["expiresAt"]),
+
+  /**
+   * Tabela para vincular usuários a CNPJs
+   * Controla as permissões de acesso de cada usuário
+   */
+  userCnpjLinks: defineTable({
+    userId: v.string(), // ID do usuário no Clerk
+    cnpjId: v.id("cnpjs"), // ID do CNPJ vinculado
+    role: v.string(), // Role do usuário: admin, manager, employee
+    status: v.string(), // Status: active, inactive, suspended
+    createdAt: v.number(), // Data de criação do vínculo
+    updatedAt: v.number(), // Data da última atualização
+    createdBy: v.id("users"), // Usuário Master que criou o vínculo
+    lastAccess: v.optional(v.number()), // Último acesso do usuário
+    accessCount: v.number(), // Contador de acessos
+  })
+    .index("by_user", ["userId"])
+    .index("by_cnpj", ["cnpjId"])
+    .index("by_status", ["status"]),
+
+  /**
+   * Tabela para histórico de renovações dos CNPJs
+   * Controla o histórico de pagamentos e renovações
+   */
+  cnpjRenewals: defineTable({
+    cnpjId: v.id("cnpjs"), // ID do CNPJ renovado
+    plan: v.string(), // Plano da renovação
+    days: v.number(), // Quantidade de dias adicionados
+    amount: v.number(), // Valor pago pela renovação
+    paymentMethod: v.string(), // Método de pagamento
+    status: v.string(), // Status: pending, completed, failed
+    createdAt: v.number(), // Data da renovação
+    expiresAt: v.number(), // Nova data de expiração
+    createdBy: v.id("users"), // Usuário Master que processou
+    notes: v.optional(v.string()), // Observações da renovação
+  })
+    .index("by_cnpj", ["cnpjId"])
+    .index("by_status", ["status"])
+    .index("by_expiration", ["expiresAt"]),
 });
