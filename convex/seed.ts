@@ -20,8 +20,8 @@ export const seed = mutation({
       updatedAt: now,
     });
 
-    // Criar CNPJ de exemplo
-    const cnpjId = await ctx.db.insert("cnpjs", {
+    // Criar tenant de exemplo
+    const tenantId = await ctx.db.insert("tenants", {
       cnpj: "12.345.678/0001-90",
       companyName: "HotDog Manager Ltda",
       email: "contato@hotdogmanager.com",
@@ -33,27 +33,13 @@ export const seed = mutation({
       updatedAt: now,
       expiresAt: now + (365 * 24 * 60 * 60 * 1000), // 1 ano
       createdBy: masterUserId,
-      notes: "CNPJ principal do sistema",
+      notes: "Tenant principal do sistema",
     });
 
-    // Criar registro de renovação inicial
-    await ctx.db.insert("cnpjRenewals", {
-      cnpjId,
-      plan: "enterprise",
-      days: 365,
-      amount: 0,
-      paymentMethod: "initial",
-      status: "completed",
-      createdAt: now,
-      expiresAt: now + (365 * 24 * 60 * 60 * 1000),
-      createdBy: masterUserId,
-      notes: "Criação inicial do CNPJ",
-    });
-
-    // Vincular usuário Master ao CNPJ
-    await ctx.db.insert("userCnpjLinks", {
+    // Vincular usuário Master ao tenant
+    await ctx.db.insert("memberships", {
+      tenantId,
       userId: "user_master_example", // Será atualizado automaticamente
-      cnpjId,
       role: "admin",
       status: "active",
       createdAt: now,
@@ -65,7 +51,7 @@ export const seed = mutation({
     return {
       message: "Seed executado com sucesso!",
       masterUserId,
-      cnpjId,
+      tenantId,
       instructions: [
         "1. O usuário Master 'pedrinhocornetti@gmail.com' foi criado",
         "2. Execute este seed apenas uma vez",
