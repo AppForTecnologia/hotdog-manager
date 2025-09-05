@@ -33,10 +33,74 @@ export default defineSchema({
     .index("by_active", ["isActive"]),
 
   /**
+   * Tabela de tenants (empresas/CNPJs)
+   * Cada tenant representa uma empresa diferente com seus próprios dados
+   */
+  tenants: defineTable({
+    // CNPJ da empresa (formato: XX.XXX.XXX/XXXX-XX)
+    cnpj: v.string(),
+    // Nome da empresa
+    companyName: v.string(),
+    // Email de contato da empresa
+    email: v.string(),
+    // Telefone de contato (opcional)
+    phone: v.optional(v.string()),
+    // Endereço da empresa (opcional)
+    address: v.optional(v.string()),
+    // Plano contratado (basic, premium, enterprise)
+    plan: v.string(),
+    // Status do tenant (active, suspended, expired)
+    status: v.string(),
+    // Data de criação
+    createdAt: v.number(),
+    // Data da última atualização
+    updatedAt: v.number(),
+    // Data de expiração do plano
+    expiresAt: v.number(),
+    // Usuário Master que criou o tenant
+    createdBy: v.id("users"),
+    // Observações adicionais
+    notes: v.optional(v.string()),
+  })
+    .index("byCnpj", ["cnpj"])
+    .index("byStatus", ["status"])
+    .index("byExpiresAt", ["expiresAt"]),
+
+  /**
+   * Tabela de memberships (vinculação de usuários a tenants)
+   * Controla as permissões de acesso de cada usuário em cada tenant
+   */
+  memberships: defineTable({
+    // ID do tenant
+    tenantId: v.id("tenants"),
+    // ID do usuário no Clerk
+    userId: v.string(),
+    // Role do usuário no tenant (admin, manager, employee)
+    role: v.string(),
+    // Status do membership (active, inactive, suspended)
+    status: v.string(),
+    // Data de criação do membership
+    createdAt: v.number(),
+    // Data da última atualização
+    updatedAt: v.number(),
+    // Usuário Master que criou o membership
+    createdBy: v.id("users"),
+    // Último acesso do usuário ao tenant
+    lastAccess: v.optional(v.number()),
+    // Contador de acessos
+    accessCount: v.number(),
+  })
+    .index("byTenant", ["tenantId"])
+    .index("byUser", ["userId"])
+    .index("byTenantAndUser", ["tenantId", "userId"], { unique: true }),
+
+  /**
    * Tabela de categorias de produtos
    * Organiza os produtos por tipo (bebidas, lanches, etc.)
    */
   categories: defineTable({
+    // ID do tenant (opcional para compatibilidade com dados existentes)
+    tenantId: v.optional(v.id("tenants")),
     // Nome da categoria
     name: v.string(),
     // Descrição da categoria
@@ -52,13 +116,16 @@ export default defineSchema({
   })
     .index("by_name", ["name"])
     .index("by_active", ["isActive"])
-    .index("by_created_at", ["createdAt"]),
+    .index("by_created_at", ["createdAt"])
+    .index("byTenant", ["tenantId"]),
 
   /**
    * Tabela de produtos
    * Armazena todos os produtos disponíveis para venda
    */
   products: defineTable({
+    // ID do tenant (opcional para compatibilidade com dados existentes)
+    tenantId: v.optional(v.id("tenants")),
     // Nome do produto
     name: v.string(),
     // Descrição do produto
@@ -86,13 +153,16 @@ export default defineSchema({
     .index("by_category", ["categoryId"])
     .index("by_active", ["isActive"])
     .index("by_sku", ["sku"])
-    .index("by_created_at", ["createdAt"]),
+    .index("by_created_at", ["createdAt"])
+    .index("byTenant", ["tenantId"]),
 
   /**
    * Tabela de vendas
    * Registra todas as vendas realizadas
    */
   sales: defineTable({
+    // ID do tenant (opcional para compatibilidade com dados existentes)
+    tenantId: v.optional(v.id("tenants")),
     // ID do usuário que fez a venda
     userId: v.id("users"),
     // ID do usuário no Clerk
@@ -122,13 +192,16 @@ export default defineSchema({
     .index("by_date", ["saleDate"])
     .index("by_status", ["status"])
     .index("by_clerk_user", ["clerkUserId"])
-    .index("by_created_at", ["createdAt"]),
+    .index("by_created_at", ["createdAt"])
+    .index("byTenant", ["tenantId"]),
 
   /**
    * Tabela de itens de venda
    * Detalha cada produto vendido em uma venda
    */
   saleItems: defineTable({
+    // ID do tenant (opcional para compatibilidade com dados existentes)
+    tenantId: v.optional(v.id("tenants")),
     // ID da venda
     saleId: v.id("sales"),
     // ID do produto
@@ -151,7 +224,8 @@ export default defineSchema({
     .index("by_sale", ["saleId"])
     .index("by_product", ["productId"])
     .index("by_payment_status", ["paymentStatus"])
-    .index("by_created_at", ["createdAt"]),
+    .index("by_created_at", ["createdAt"])
+    .index("byTenant", ["tenantId"]),
 
 
 
@@ -160,6 +234,8 @@ export default defineSchema({
    * Registra contagens e diferenças ao fechar o caixa
    */
   cashRegister: defineTable({
+    // ID do tenant (opcional para compatibilidade com dados existentes)
+    tenantId: v.optional(v.id("tenants")),
     // ID do usuário que fechou o caixa
     userId: v.id("users"),
     // ID do usuário no Clerk
@@ -207,13 +283,16 @@ export default defineSchema({
   })
     .index("by_date", ["closeDate"])
     .index("by_user", ["userId"])
-    .index("by_created_at", ["createdAt"]),
+    .index("by_created_at", ["createdAt"])
+    .index("byTenant", ["tenantId"]),
 
   /**
    * Tabela de métodos de pagamento por venda
    * Permite múltiplos métodos de pagamento em uma única venda
    */
   paymentMethods: defineTable({
+    // ID do tenant (opcional para compatibilidade com dados existentes)
+    tenantId: v.optional(v.id("tenants")),
     // ID da venda
     saleId: v.id("sales"),
     // ID do item específico (opcional - para pagamento por item)
@@ -230,13 +309,16 @@ export default defineSchema({
     .index("by_sale", ["saleId"])
     .index("by_sale_item", ["saleItemId"])
     .index("by_method", ["method"])
-    .index("by_created_at", ["createdAt"]),
+    .index("by_created_at", ["createdAt"])
+    .index("byTenant", ["tenantId"]),
 
   /**
    * Tabela de controle de produção
    * Controla o status de produção de cada item individual
    */
   productionItems: defineTable({
+    // ID do tenant (opcional para compatibilidade com dados existentes)
+    tenantId: v.optional(v.id("tenants")),
     // ID do item de venda
     saleItemId: v.id("saleItems"),
     // ID da venda
@@ -261,13 +343,16 @@ export default defineSchema({
     .index("by_sale_item", ["saleItemId"])
     .index("by_sale", ["saleId"])
     .index("by_production_status", ["productionStatus"])
-    .index("by_created_at", ["createdAt"]),
+    .index("by_created_at", ["createdAt"])
+    .index("byTenant", ["tenantId"]),
 
   /**
    * Tabela de configuração de grupos de produtos
    * Permite configurar grupos personalizados e sua ordem
    */
   productGroups: defineTable({
+    // ID do tenant (opcional para compatibilidade com dados existentes)
+    tenantId: v.optional(v.id("tenants")),
     // Nome do grupo (lanches, bebidas, porcoes, etc.)
     name: v.string(),
     // Título exibido na interface
@@ -290,7 +375,8 @@ export default defineSchema({
     .index("by_name", ["name"])
     .index("by_order", ["order"])
     .index("by_active", ["isActive"])
-    .index("by_created_at", ["createdAt"]),
+    .index("by_created_at", ["createdAt"])
+    .index("byTenant", ["tenantId"]),
 
   /**
    * Tabela de configuração de grupos de vendas
@@ -298,6 +384,8 @@ export default defineSchema({
    * com ícones, cores e ordem de exibição
    */
   saleGroups: defineTable({
+    // ID do tenant (opcional para compatibilidade com dados existentes)
+    tenantId: v.optional(v.id("tenants")),
     // Nome do grupo (lanches, bebidas, porcoes, etc.)
     name: v.string(),
     // Título exibido na interface
@@ -320,13 +408,16 @@ export default defineSchema({
     .index("by_name", ["name"])
     .index("by_order", ["order"])
     .index("by_active", ["isActive"])
-    .index("by_created_at", ["createdAt"]),
+    .index("by_created_at", ["createdAt"])
+    .index("byTenant", ["tenantId"]),
 
   /**
    * Tabela de clientes para delivery
    * Armazena informações dos clientes que fazem pedidos por delivery
    */
   customers: defineTable({
+    // ID do tenant (opcional para compatibilidade com dados existentes)
+    tenantId: v.optional(v.id("tenants")),
     // Nome completo do cliente
     name: v.string(),
     // Número de telefone
@@ -347,66 +438,7 @@ export default defineSchema({
     .index("by_name", ["name"])
     .index("by_phone", ["phone"])
     .index("by_active", ["isActive"])
-    .index("by_created_at", ["createdAt"]),
+    .index("by_created_at", ["createdAt"])
+    .index("byTenant", ["tenantId"]),
 
-  /**
-   * Tabela para gerenciar CNPJs e suas configurações
-   * Cada CNPJ representa uma empresa/tenant diferente
-   */
-  cnpjs: defineTable({
-    cnpj: v.string(), // CNPJ da empresa (formato: XX.XXX.XXX/XXXX-XX)
-    companyName: v.string(), // Nome da empresa
-    email: v.string(), // Email de contato da empresa
-    phone: v.optional(v.string()), // Telefone de contato
-    address: v.optional(v.string()), // Endereço da empresa
-    plan: v.string(), // Plano contratado (basic, premium, enterprise)
-    status: v.string(), // Status: active, suspended, expired
-    createdAt: v.number(), // Data de criação
-    updatedAt: v.number(), // Data da última atualização
-    expiresAt: v.number(), // Data de expiração do plano
-    createdBy: v.id("users"), // Usuário Master que criou
-    notes: v.optional(v.string()), // Observações adicionais
-  })
-    .index("by_cnpj", ["cnpj"])
-    .index("by_status", ["status"])
-    .index("by_expiration", ["expiresAt"]),
-
-  /**
-   * Tabela para vincular usuários a CNPJs
-   * Controla as permissões de acesso de cada usuário
-   */
-  userCnpjLinks: defineTable({
-    userId: v.string(), // ID do usuário no Clerk
-    cnpjId: v.id("cnpjs"), // ID do CNPJ vinculado
-    role: v.string(), // Role do usuário: admin, manager, employee
-    status: v.string(), // Status: active, inactive, suspended
-    createdAt: v.number(), // Data de criação do vínculo
-    updatedAt: v.number(), // Data da última atualização
-    createdBy: v.id("users"), // Usuário Master que criou o vínculo
-    lastAccess: v.optional(v.number()), // Último acesso do usuário
-    accessCount: v.number(), // Contador de acessos
-  })
-    .index("by_user", ["userId"])
-    .index("by_cnpj", ["cnpjId"])
-    .index("by_status", ["status"]),
-
-  /**
-   * Tabela para histórico de renovações dos CNPJs
-   * Controla o histórico de pagamentos e renovações
-   */
-  cnpjRenewals: defineTable({
-    cnpjId: v.id("cnpjs"), // ID do CNPJ renovado
-    plan: v.string(), // Plano da renovação
-    days: v.number(), // Quantidade de dias adicionados
-    amount: v.number(), // Valor pago pela renovação
-    paymentMethod: v.string(), // Método de pagamento
-    status: v.string(), // Status: pending, completed, failed
-    createdAt: v.number(), // Data da renovação
-    expiresAt: v.number(), // Nova data de expiração
-    createdBy: v.id("users"), // Usuário Master que processou
-    notes: v.optional(v.string()), // Observações da renovação
-  })
-    .index("by_cnpj", ["cnpjId"])
-    .index("by_status", ["status"])
-    .index("by_expiration", ["expiresAt"]),
 });
