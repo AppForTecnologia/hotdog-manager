@@ -22,6 +22,7 @@ import type * as products from "../products.js";
 import type * as saleGroups from "../saleGroups.js";
 import type * as sales from "../sales.js";
 import type * as seed from "../seed.js";
+import type * as tenants from "../tenants.js";
 import type * as users from "../users.js";
 import type * as utils_auth from "../utils/auth.js";
 import type * as utils_cnpj from "../utils/cnpj.js";
@@ -44,6 +45,7 @@ declare const fullApi: ApiFromModules<{
   saleGroups: typeof saleGroups;
   sales: typeof sales;
   seed: typeof seed;
+  tenants: typeof tenants;
   users: typeof users;
   "utils/auth": typeof utils_auth;
   "utils/cnpj": typeof utils_cnpj;

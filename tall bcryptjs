@@ -1,0 +1,5 @@
+[33mb68ab07[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m)[m feat(utils): add withTenantAuth and CNPJ validation helpers
+[33mc6a2c91[m feat(utils): add withTenantAuth and CNPJ validation helpers
+[33m9179fe0[m feat(schema): add tenants and memberships collections with tenantId on business tables
+[33ma587eed[m[33m ([m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m)[m implementando permissões
+[33mef5a0aa[m criando tela pedidos e corrigindo relatórios
