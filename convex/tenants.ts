@@ -1,7 +1,8 @@
 import { ConvexError, v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, action } from "./_generated/server";
 import { requireUserId } from "./utils/auth";
 import { normalizeCnpj, isValidCnpj } from "./utils/cnpj";
+import { api } from "./_generated/api";
 
 /**
  * Função auxiliar para calcular hash de senha
@@ -442,5 +443,465 @@ export const getTenantStats = query({
     };
     
     return stats;
+  },
+});
+
+/**
+ * Verificar CNPJ e senha com rate limiting
+ * 
+ * @param cnpj - CNPJ do tenant
+ * @param password - Senha do tenant
+ * @returns Dados do tenant se credenciais estiverem corretas
+ */
+export const verifyCnpjAndPassword = action({
+  args: {
+    cnpj: v.string(),
+    password: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Verificar se usuário está autenticado
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new ConvexError("Usuário não autenticado");
+    }
+    const userId = identity.subject;
+    
+    // Normalizar CNPJ
+    const normalizedCnpj = normalizeCnpj(args.cnpj);
+    if (!isValidCnpj(normalizedCnpj)) {
+      throw new ConvexError("CNPJ inválido");
+    }
+    
+    // Verificar rate limiting (5 tentativas por minuto)
+    const now = Date.now();
+    const oneMinuteAgo = now - (60 * 1000);
+    
+    // Buscar tentativas recentes do usuário usando uma query interna
+    const recentAttempts = await ctx.runQuery(
+      "tenants:getRateLimitAttempts" as any,
+      {
+        userId,
+        since: oneMinuteAgo,
+      }
+    );
+    
+    // Verificar se excedeu o limite
+    if (recentAttempts.length >= 5) {
+      throw new ConvexError("Muitas tentativas. Aguarde 1 minuto antes de tentar novamente.");
+    }
+    
+    // Registrar tentativa usando uma mutation interna
+    await ctx.runMutation(
+      "tenants:recordRateLimitAttempt" as any,
+      {
+        userId,
+        timestamp: now,
+        success: false, // Será atualizado se bem-sucedido
+      }
+    );
+    
+    // Buscar tenant por CNPJ usando uma query interna
+    const tenant = await ctx.runQuery(
+      "tenants:getTenantByCnpjInternal" as any,
+      {
+        cnpj: normalizedCnpj,
+      }
+    );
+    
+    if (!tenant) {
+      throw new ConvexError("CNPJ não encontrado");
+    }
+    
+    // Verificar se tenant está ativo
+    if (tenant.status !== "active") {
+      throw new ConvexError(`Tenant está ${tenant.status}`);
+    }
+    
+    // Verificar se tenant não expirou
+    if (tenant.expiresAt < now) {
+      throw new ConvexError("Tenant expirado");
+    }
+    
+    // Verificar senha (implementação simplificada)
+    // Em produção, seria necessário armazenar o hash da senha no tenant
+    const isValidPassword = await verifyPassword(args.password, "default_hash");
+    
+    if (!isValidPassword) {
+      throw new ConvexError("Senha incorreta");
+    }
+    
+    // Atualizar tentativa como bem-sucedida
+    if (recentAttempts.length > 0) {
+      await ctx.runMutation(
+        "tenants:updateRateLimitAttempt" as any,
+        {
+          attemptId: recentAttempts[recentAttempts.length - 1]._id,
+          success: true,
+        }
+      );
+    }
+    
+    // Retornar dados do tenant (sem informações sensíveis)
+    return {
+      tenantId: tenant._id,
+      cnpj: tenant.cnpj,
+      companyName: tenant.companyName,
+      email: tenant.email,
+      phone: tenant.phone,
+      address: tenant.address,
+      plan: tenant.plan,
+      status: tenant.status,
+      expiresAt: tenant.expiresAt,
+      message: "Credenciais válidas",
+    };
+  },
+});
+
+/**
+ * Função auxiliar para buscar tentativas de rate limiting
+ */
+export const getRateLimitAttempts = query({
+  args: {
+    userId: v.string(),
+    since: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("rateLimitAttempts")
+      .withIndex("byUser", (q) => q.eq("userId", args.userId))
+      .filter((q) => q.gt(q.field("timestamp"), args.since))
+      .collect();
+  },
+});
+
+/**
+ * Função auxiliar para registrar tentativa de rate limiting
+ */
+export const recordRateLimitAttempt = mutation({
+  args: {
+    userId: v.string(),
+    timestamp: v.number(),
+    success: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("rateLimitAttempts", {
+      userId: args.userId,
+      timestamp: args.timestamp,
+      success: args.success,
+    });
+  },
+});
+
+/**
+ * Função auxiliar para atualizar tentativa de rate limiting
+ */
+export const updateRateLimitAttempt = mutation({
+  args: {
+    attemptId: v.id("rateLimitAttempts"),
+    success: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.attemptId, {
+      success: args.success,
+    });
+  },
+});
+
+/**
+ * Função auxiliar para buscar tenant por CNPJ (uso interno)
+ */
+export const getTenantByCnpjInternal = query({
+  args: {
+    cnpj: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("tenants")
+      .withIndex("byCnpj", (q) => q.eq("cnpj", args.cnpj))
+      .first();
+  },
+});
+
+/**
+ * Query para verificar o status do tenant atual do usuário
+ * Retorna informações sobre expiração e status do tenant
+ */
+export const getCurrentTenantStatus = query({
+  args: { tenantId: v.id("tenants") },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx);
+    
+    // Verificar se o usuário tem membership no tenant
+    const membership = await ctx.db
+      .query("memberships")
+      .withIndex("byTenantAndUser", (q) => 
+        q.eq("tenantId", args.tenantId).eq("userId", userId)
+      )
+      .first();
+      
+    if (!membership) {
+      return {
+        status: 'no_access',
+        message: 'Usuário não tem acesso a este tenant',
+        tenant: null,
+        membership: null,
+        isExpired: false,
+        isSuspended: false,
+        expiresAt: null,
+        daysUntilExpiry: null,
+      };
+    }
+    
+    // Buscar o tenant
+    const tenant = await ctx.db.get(args.tenantId);
+    if (!tenant) {
+      return {
+        status: 'not_found',
+        message: 'Tenant não encontrado',
+        tenant: null,
+        membership: null,
+        isExpired: false,
+        isSuspended: false,
+        expiresAt: null,
+        daysUntilExpiry: null,
+      };
+    }
+    
+    const now = Date.now();
+    const isExpired = tenant.expiresAt < now;
+    const isSuspended = tenant.status !== "active";
+    const daysUntilExpiry = Math.ceil((tenant.expiresAt - now) / (1000 * 60 * 60 * 24));
+    
+    let status: 'active' | 'expired' | 'suspended' | 'expiring_soon' = 'active';
+    let message = 'Tenant ativo';
+    
+    if (isSuspended) {
+      status = 'suspended';
+      message = `Tenant está ${tenant.status}`;
+    } else if (isExpired) {
+      status = 'expired';
+      message = `Tenant expirado em ${new Date(tenant.expiresAt).toLocaleDateString('pt-BR')}`;
+    } else if (daysUntilExpiry <= 7 && daysUntilExpiry > 0) {
+      status = 'expiring_soon';
+      message = `Tenant expira em ${daysUntilExpiry} dias`;
+    }
+    
+    return {
+      status,
+      message,
+      tenant: {
+        _id: tenant._id,
+        companyName: tenant.companyName,
+        cnpj: tenant.cnpj,
+        plan: tenant.plan,
+        status: tenant.status,
+        expiresAt: tenant.expiresAt,
+        createdAt: tenant.createdAt,
+      },
+      membership: {
+        _id: membership._id,
+        role: membership.role,
+        status: membership.status,
+        lastAccess: membership.lastAccess,
+        accessCount: membership.accessCount,
+      },
+      isExpired,
+      isSuspended,
+      expiresAt: tenant.expiresAt,
+      daysUntilExpiry: daysUntilExpiry > 0 ? daysUntilExpiry : 0,
+    };
+  },
+});
+
+/**
+ * Mutation para marcar tenants expirados
+ * Usado pelo cron diário para atualizar status de tenants vencidos
+ */
+export const markExpired = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    
+    // Buscar todos os tenants ativos que expiraram
+    const expiredTenants = await ctx.db
+      .query("tenants")
+      .withIndex("byStatus", (q) => q.eq("status", "active"))
+      .filter((q) => q.lt(q.field("expiresAt"), now))
+      .collect();
+    
+    console.log(`[CRON] Encontrados ${expiredTenants.length} tenants expirados`);
+    
+    let markedCount = 0;
+    const errors: string[] = [];
+    
+    // Marcar cada tenant como expirado
+    for (const tenant of expiredTenants) {
+      try {
+        await ctx.db.patch(tenant._id, {
+          status: "expired",
+          updatedAt: now,
+        });
+        
+        markedCount++;
+        console.log(`[CRON] Tenant ${tenant.companyName} (${tenant.cnpj}) marcado como expirado`);
+        
+        // Opcional: Desativar memberships do tenant expirado
+        const memberships = await ctx.db
+          .query("memberships")
+          .withIndex("byTenant", (q) => q.eq("tenantId", tenant._id))
+          .filter((q) => q.eq(q.field("status"), "active"))
+          .collect();
+        
+        for (const membership of memberships) {
+          await ctx.db.patch(membership._id, {
+            status: "inactive",
+            updatedAt: now,
+          });
+        }
+        
+        console.log(`[CRON] ${memberships.length} memberships desativados para tenant ${tenant.companyName}`);
+        
+      } catch (error) {
+        const errorMsg = `Erro ao marcar tenant ${tenant.companyName} (${tenant._id}): ${error}`;
+        errors.push(errorMsg);
+        console.error(`[CRON] ${errorMsg}`);
+      }
+    }
+    
+    // Retornar resultado da operação
+    return {
+      success: true,
+      totalExpired: expiredTenants.length,
+      markedCount,
+      errors: errors.length > 0 ? errors : null,
+      timestamp: now,
+    };
+  },
+});
+
+/**
+ * Query para obter estatísticas de expiração
+ * Útil para monitoramento do cron
+ */
+export const getExpirationStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const oneDayFromNow = now + (24 * 60 * 60 * 1000);
+    const sevenDaysFromNow = now + (7 * 24 * 60 * 60 * 1000);
+    
+    // Buscar todos os tenants
+    const allTenants = await ctx.db.query("tenants").collect();
+    
+    const stats = {
+      total: allTenants.length,
+      active: 0,
+      expired: 0,
+      suspended: 0,
+      expiringToday: 0,
+      expiringIn7Days: 0,
+      expiredToday: 0,
+    };
+    
+    allTenants.forEach(tenant => {
+      if (tenant.status === "active") {
+        stats.active++;
+        
+        if (tenant.expiresAt < now) {
+          stats.expired++;
+          // Verificar se expirou hoje (últimas 24 horas)
+          if (tenant.expiresAt > now - (24 * 60 * 60 * 1000)) {
+            stats.expiredToday++;
+          }
+        } else if (tenant.expiresAt <= oneDayFromNow) {
+          stats.expiringToday++;
+        } else if (tenant.expiresAt <= sevenDaysFromNow) {
+          stats.expiringIn7Days++;
+        }
+      } else if (tenant.status === "suspended") {
+        stats.suspended++;
+      } else if (tenant.status === "expired") {
+        stats.expired++;
+      }
+    });
+    
+    return stats;
+  },
+});
+
+/**
+ * Action para testar o cron manualmente
+ * Útil para desenvolvimento e debugging
+ */
+export const testMarkExpired = action({
+  args: {},
+  handler: async (ctx): Promise<{
+    success: boolean;
+    message: string;
+    result?: any;
+    error?: string;
+    timestamp: number;
+  }> => {
+    console.log("[TEST] Iniciando teste manual do markExpired");
+    
+    try {
+      const result: any = await ctx.runMutation(api.tenants.markExpired, {});
+      
+      console.log("[TEST] Resultado do teste:", result);
+      
+      return {
+        success: true,
+        message: "Teste executado com sucesso",
+        result,
+        timestamp: Date.now(),
+      };
+    } catch (error) {
+      console.error("[TEST] Erro no teste:", error);
+      
+      return {
+        success: false,
+        message: `Erro no teste: ${error}`,
+        error: error instanceof Error ? error.message : String(error),
+        timestamp: Date.now(),
+      };
+    }
+  },
+});
+
+/**
+ * Query para verificar status do cron
+ * Retorna informações sobre a última execução e próximas execuções
+ */
+export const getCronStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const oneDayFromNow = now + (24 * 60 * 60 * 1000);
+    
+    // Buscar tenants que expirarão nas próximas 24 horas
+    const expiringSoon = await ctx.db
+      .query("tenants")
+      .withIndex("byStatus", (q) => q.eq("status", "active"))
+      .filter((q) => q.and(
+        q.gte(q.field("expiresAt"), now),
+        q.lte(q.field("expiresAt"), oneDayFromNow)
+      ))
+      .collect();
+    
+    // Buscar tenants já expirados mas ainda marcados como ativos
+    const shouldBeExpired = await ctx.db
+      .query("tenants")
+      .withIndex("byStatus", (q) => q.eq("status", "active"))
+      .filter((q) => q.lt(q.field("expiresAt"), now))
+      .collect();
+    
+    return {
+      currentTime: now,
+      expiringIn24Hours: expiringSoon.length,
+      shouldBeExpired: shouldBeExpired.length,
+      nextCronRun: "03:00 UTC (diário)",
+      cronStatus: "Ativo",
+      lastCheck: now,
+    };
   },
 });

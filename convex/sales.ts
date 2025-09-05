@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { withTenantAuth } from "./utils/auth";
 
 /**
  * Funções para gerenciar vendas no sistema HotDog Manager
@@ -12,15 +13,18 @@ import { Id } from "./_generated/dataModel";
  * Retorna vendas ordenadas por data (mais recentes primeiro)
  */
 export const listAll = query({
-  args: {},
-  handler: async (ctx) => {
-    const sales = await ctx.db
-      .query("sales")
-      .withIndex("by_date", (q) => q.gte("saleDate", 0))
-      .collect();
+  args: { tenantId: v.id("tenants") },
+  handler: async (ctx, args) => {
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      const sales = await ctx.db
+        .query("sales")
+        .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+        .filter((q) => q.gte(q.field("saleDate"), 0))
+        .collect();
 
-    // Ordenar por data (mais recentes primeiro)
-    return sales.sort((a, b) => b.saleDate - a.saleDate);
+      // Ordenar por data (mais recentes primeiro)
+      return sales.sort((a, b) => b.saleDate - a.saleDate);
+    });
   },
 });
 
@@ -29,15 +33,21 @@ export const listAll = query({
  * Retorna vendas de um usuário específico
  */
 export const listByUser = query({
-  args: { userId: v.id("users") },
+  args: { 
+    tenantId: v.id("tenants"),
+    userId: v.id("users") 
+  },
   handler: async (ctx, args) => {
-    const sales = await ctx.db
-      .query("sales")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
-      .collect();
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      const sales = await ctx.db
+        .query("sales")
+        .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+        .filter((q) => q.eq(q.field("userId"), args.userId))
+        .collect();
 
-    // Ordenar por data (mais recentes primeiro)
-    return sales.sort((a, b) => b.saleDate - a.saleDate);
+      // Ordenar por data (mais recentes primeiro)
+      return sales.sort((a, b) => b.saleDate - a.saleDate);
+    });
   },
 });
 
@@ -47,20 +57,26 @@ export const listByUser = query({
  */
 export const listByDateRange = query({
   args: { 
+    tenantId: v.id("tenants"),
     startDate: v.number(), 
     endDate: v.number() 
   },
   handler: async (ctx, args) => {
-    const sales = await ctx.db
-      .query("sales")
-      .withIndex("by_date", (q) => 
-        q.gte("saleDate", args.startDate)
-      )
-      .filter((q) => q.lte(q.field("saleDate"), args.endDate))
-      .collect();
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      const sales = await ctx.db
+        .query("sales")
+        .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+        .filter((q) => 
+          q.and(
+            q.gte(q.field("saleDate"), args.startDate),
+            q.lte(q.field("saleDate"), args.endDate)
+          )
+        )
+        .collect();
 
-    // Ordenar por data (mais recentes primeiro)
-    return sales.sort((a, b) => b.saleDate - a.saleDate);
+      // Ordenar por data (mais recentes primeiro)
+      return sales.sort((a, b) => b.saleDate - a.saleDate);
+    });
   },
 });
 
@@ -69,10 +85,18 @@ export const listByDateRange = query({
  * Retorna uma venda específica com todas as informações
  */
 export const getById = query({
-  args: { id: v.id("sales") },
+  args: { 
+    tenantId: v.id("tenants"),
+    id: v.id("sales") 
+  },
   handler: async (ctx, args) => {
-    const sale = await ctx.db.get(args.id);
-    return sale;
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      const sale = await ctx.db.get(args.id);
+      if (!sale || sale.tenantId !== args.tenantId) {
+        return null;
+      }
+      return sale;
+    });
   },
 });
 
@@ -81,15 +105,26 @@ export const getById = query({
  * Retorna todos os produtos vendidos em uma venda específica
  */
 export const getSaleItems = query({
-  args: { saleId: v.id("sales") },
+  args: { 
+    tenantId: v.id("tenants"),
+    saleId: v.id("sales") 
+  },
   handler: async (ctx, args) => {
-    const items = await ctx.db
-      .query("saleItems")
-      .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
-      .collect();
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      const sale = await ctx.db.get(args.saleId);
+      if (!sale || sale.tenantId !== args.tenantId) {
+        return [];
+      }
 
-    // Ordenar por data de criação (mais antigos primeiro)
-    return items.sort((a, b) => a.createdAt - b.createdAt);
+      const items = await ctx.db
+        .query("saleItems")
+        .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+        .filter((q) => q.eq(q.field("saleId"), args.saleId))
+        .collect();
+
+      // Ordenar por data de criação (mais antigos primeiro)
+      return items.sort((a, b) => a.createdAt - b.createdAt);
+    });
   },
 });
 
@@ -98,23 +133,29 @@ export const getSaleItems = query({
  * Retorna venda + todos os itens em uma única consulta
  */
 export const getSaleWithItems = query({
-  args: { id: v.id("sales") },
+  args: { 
+    tenantId: v.id("tenants"),
+    id: v.id("sales") 
+  },
   handler: async (ctx, args) => {
-    const sale = await ctx.db.get(args.id);
-    if (!sale) return null;
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      const sale = await ctx.db.get(args.id);
+      if (!sale || sale.tenantId !== args.tenantId) return null;
 
-    const items = await ctx.db
-      .query("saleItems")
-      .withIndex("by_sale", (q) => q.eq("saleId", args.id))
-      .collect();
+      const items = await ctx.db
+        .query("saleItems")
+        .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+        .filter((q) => q.eq(q.field("saleId"), args.id))
+        .collect();
 
-    // Ordenar itens por data de criação (mais antigos primeiro)
-    const sortedItems = items.sort((a, b) => a.createdAt - b.createdAt);
+      // Ordenar itens por data de criação (mais antigos primeiro)
+      const sortedItems = items.sort((a, b) => a.createdAt - b.createdAt);
 
-    return {
-      ...sale,
-      items: sortedItems,
-    };
+      return {
+        ...sale,
+        items: sortedItems,
+      };
+    });
   },
 });
 
@@ -123,30 +164,37 @@ export const getSaleWithItems = query({
  * Retorna vendas com um status específico
  */
 export const listByStatus = query({
-  args: { status: v.string() },
+  args: { 
+    tenantId: v.id("tenants"),
+    status: v.string() 
+  },
   handler: async (ctx, args) => {
-    let sales;
-    
-    if (args.status === "pendente") {
-      // Para status pendente, incluir também vendas parcialmente pagas
-      sales = await ctx.db
-        .query("sales")
-        .filter((q) => 
-          q.or(
-            q.eq(q.field("status"), "pendente"),
-            q.eq(q.field("status"), "parcialmente_paga")
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      let sales;
+      
+      if (args.status === "pendente") {
+        // Para status pendente, incluir também vendas parcialmente pagas
+        sales = await ctx.db
+          .query("sales")
+          .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+          .filter((q) => 
+            q.or(
+              q.eq(q.field("status"), "pendente"),
+              q.eq(q.field("status"), "parcialmente_paga")
+            )
           )
-        )
-        .collect();
-    } else {
-      sales = await ctx.db
-        .query("sales")
-        .withIndex("by_status", (q) => q.eq("status", args.status))
-        .collect();
-    }
+          .collect();
+      } else {
+        sales = await ctx.db
+          .query("sales")
+          .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+          .filter((q) => q.eq(q.field("status"), args.status))
+          .collect();
+      }
 
-    // Ordenar por data (mais recentes primeiro)
-    return sales.sort((a, b) => b.saleDate - a.saleDate);
+      // Ordenar por data (mais recentes primeiro)
+      return sales.sort((a, b) => b.saleDate - a.saleDate);
+    });
   },
 });
 
@@ -156,32 +204,34 @@ export const listByStatus = query({
  */
 export const getTotalByDateRange = query({
   args: { 
+    tenantId: v.id("tenants"),
     startDate: v.number(), 
     endDate: v.number() 
   },
   handler: async (ctx, args) => {
-    const sales = await ctx.db
-      .query("sales")
-      .withIndex("by_date", (q) => 
-        q.gte("saleDate", args.startDate)
-      )
-      .filter((q) => 
-        q.and(
-          q.lte(q.field("saleDate"), args.endDate),
-          q.eq(q.field("status"), "paga")
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      const sales = await ctx.db
+        .query("sales")
+        .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+        .filter((q) => 
+          q.and(
+            q.gte(q.field("saleDate"), args.startDate),
+            q.lte(q.field("saleDate"), args.endDate),
+            q.eq(q.field("status"), "paga")
+          )
         )
-      )
-      .collect();
+        .collect();
 
-    const total = sales.reduce((sum, sale) => sum + sale.total, 0);
-    const discountTotal = sales.reduce((sum, sale) => sum + (sale.discount || 0), 0);
+      const total = sales.reduce((sum, sale) => sum + sale.total, 0);
+      const discountTotal = sales.reduce((sum, sale) => sum + (sale.discount || 0), 0);
 
-    return {
-      total,
-      discountTotal,
-      netTotal: total - discountTotal,
-      saleCount: sales.length,
-    };
+      return {
+        total,
+        discountTotal,
+        netTotal: total - discountTotal,
+        saleCount: sales.length,
+      };
+    });
   },
 });
 
@@ -191,6 +241,7 @@ export const getTotalByDateRange = query({
  */
 export const create = mutation({
   args: {
+    tenantId: v.id("tenants"),
     userId: v.id("users"),
     clerkUserId: v.string(),
     items: v.array(v.object({
@@ -206,6 +257,7 @@ export const create = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
     // Calcular total da venda
     const subtotal = args.items.reduce((sum, item) => 
       sum + (item.unitPrice * item.quantity), 0
@@ -220,21 +272,22 @@ export const create = mutation({
 
     const now = Date.now();
     
-    // Criar a venda
-    const saleId = await ctx.db.insert("sales", {
-      userId: args.userId,
-      clerkUserId: args.clerkUserId,
-      total,
-      discount,
-      paymentMethod: args.paymentMethod,
-      saleType: args.saleType,
-      customerId: args.customerId,
-      status: "pendente",
-      notes: args.notes,
-      saleDate: now,
-      createdAt: now,
-      updatedAt: now,
-    });
+      // Criar a venda
+      const saleId = await ctx.db.insert("sales", {
+        tenantId: args.tenantId,
+        userId: args.userId,
+        clerkUserId: args.clerkUserId,
+        total,
+        discount,
+        paymentMethod: args.paymentMethod,
+        saleType: args.saleType,
+        customerId: args.customerId,
+        status: "pendente",
+        notes: args.notes,
+        saleDate: now,
+        createdAt: now,
+        updatedAt: now,
+      });
 
     // Criar os itens da venda
     const saleItems = await Promise.all(
@@ -242,6 +295,7 @@ export const create = mutation({
         const subtotal = item.unitPrice * item.quantity;
         
         const itemId = await ctx.db.insert("saleItems", {
+          tenantId: args.tenantId,
           saleId,
           productId: item.productId,
           productName: item.productName,
@@ -259,7 +313,8 @@ export const create = mutation({
       })
     );
 
-    return { saleId, saleItems };
+      return { saleId, saleItems };
+    });
   },
 });
 

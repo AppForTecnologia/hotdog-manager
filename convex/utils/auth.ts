@@ -47,13 +47,13 @@ export async function withTenantAuth<T>(
   
   // 3. Verificar se o tenant está ativo
   if (tenant.status !== "active") {
-    throw new ConvexError(`Tenant está ${tenant.status}. Acesso negado.`);
+    throw new ConvexError(`TENANT_SUSPENDED: Tenant está ${tenant.status}. Acesso negado.`);
   }
   
   // 4. Verificar se o tenant não expirou
   const now = Date.now();
   if (tenant.expiresAt < now) {
-    throw new ConvexError("Tenant expirado. Renovação necessária.");
+    throw new ConvexError(`TENANT_EXPIRED: Tenant expirado em ${new Date(tenant.expiresAt).toLocaleDateString('pt-BR')}. Renovação necessária.`);
   }
   
   // 5. Buscar o membership do usuário no tenant
@@ -142,4 +142,61 @@ export async function requireRoleInTenant(
   }
   
   return userId;
+}
+
+/**
+ * Verifica o status de um tenant sem bloquear o acesso
+ * Útil para verificar se um tenant está expirado ou suspenso antes de tentar acessar
+ * 
+ * @param ctx - Contexto da query/mutation do Convex
+ * @param tenantId - ID do tenant
+ * @returns Status do tenant: 'active' | 'expired' | 'suspended' | 'not_found'
+ */
+export async function getTenantStatus(
+  ctx: QueryCtx | MutationCtx,
+  tenantId: Id<"tenants">
+): Promise<'active' | 'expired' | 'suspended' | 'not_found'> {
+  const tenant = await ctx.db.get(tenantId);
+  
+  if (!tenant) {
+    return 'not_found';
+  }
+  
+  if (tenant.status !== "active") {
+    return 'suspended';
+  }
+  
+  const now = Date.now();
+  if (tenant.expiresAt < now) {
+    return 'expired';
+  }
+  
+  return 'active';
+}
+
+/**
+ * Verifica se um tenant está próximo do vencimento
+ * 
+ * @param ctx - Contexto da query/mutation do Convex
+ * @param tenantId - ID do tenant
+ * @param daysThreshold - Número de dias para considerar próximo do vencimento (padrão: 7)
+ * @returns true se está próximo do vencimento
+ */
+export async function isTenantExpiringSoon(
+  ctx: QueryCtx | MutationCtx,
+  tenantId: Id<"tenants">,
+  daysThreshold: number = 7
+): Promise<boolean> {
+  const tenant = await ctx.db.get(tenantId);
+  
+  if (!tenant || tenant.status !== "active") {
+    return false;
+  }
+  
+  const now = Date.now();
+  const expiresAt = tenant.expiresAt;
+  const diffMs = expiresAt - now;
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  
+  return diffDays <= daysThreshold && diffDays > 0;
 }

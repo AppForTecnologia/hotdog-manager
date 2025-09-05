@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation, Link } from 'react-router-dom';
 import { 
@@ -13,46 +13,95 @@ import {
   ChefHat,
   Users,
   ClipboardList,
-  Building2
+  Building2,
+  Building
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { UserButton, useUser } from '@clerk/clerk-react';
+import { useCurrentTenant, useTenantAccess, useTenant } from '@/contexts/TenantContext';
+import { TenantSelector } from './TenantSelector';
+import { ModalVinculoCnpj, useOnboardingRequired } from './ModalVinculoCnpj';
+import { TenantSwitcher, useHasMultipleTenants } from './TenantSwitcher';
+import { TenantExpirationGuard, ExpirationWarningBanner } from './TenantExpirationGuard';
 
-const Sidebar = ({ navigation, location, onLinkClick }) => (
-  <div className="flex flex-col h-full">
-    <div className="flex items-center justify-between h-16 px-6 border-b border-white/20 flex-shrink-0">
-      <h1 className="text-xl font-bold text-white">🌭 AppFor HotDog</h1>
+const Sidebar = ({ navigation, location, onLinkClick }) => {
+  const { tenantInfo, isLoading } = useCurrentTenant();
+  const { role } = useTenantAccess();
+  const { hasMultipleTenants } = useHasMultipleTenants();
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between h-16 px-6 border-b border-white/20 flex-shrink-0">
+        <h1 className="text-xl font-bold text-white">🌭 AppFor HotDog</h1>
+      </div>
+      
+      {/* Informações do Tenant */}
+      <div className="px-4 py-4 border-b border-white/10">
+        {isLoading ? (
+          <div className="text-white/70 text-sm">Carregando tenant...</div>
+        ) : tenantInfo ? (
+          <div className="text-white">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center">
+                <Building className="h-4 w-4 mr-2" />
+                <span className="font-medium text-sm">{tenantInfo.companyName}</span>
+              </div>
+              {hasMultipleTenants && (
+                <TenantSwitcher variant="minimal" />
+              )}
+            </div>
+            <div className="text-xs text-white/70">
+              <div>CNPJ: {tenantInfo.cnpj}</div>
+              <div>Role: {role}</div>
+              <div>Plano: {tenantInfo.plan}</div>
+            </div>
+          </div>
+        ) : (
+          <div className="text-white/70 text-sm">Nenhum tenant selecionado</div>
+        )}
+      </div>
+
+      <nav className="mt-4 px-4 flex-1">
+        {navigation.map((item) => {
+          const isActive = location.pathname === item.href;
+          return (
+            <Link
+              key={item.name}
+              to={item.href}
+              className={`flex items-center px-4 py-3 mb-2 rounded-lg transition-all duration-200 ${
+                isActive
+                  ? 'bg-white/20 text-white shadow-lg'
+                  : 'text-white/70 hover:bg-white/10 hover:text-white'
+              }`}
+              onClick={onLinkClick}
+            >
+              <item.icon className="h-5 w-5 mr-3" />
+              {item.name}
+            </Link>
+          );
+        })}
+      </nav>
     </div>
-    <nav className="mt-8 px-4 flex-1">
-      {navigation.map((item) => {
-        const isActive = location.pathname === item.href;
-        return (
-          <Link
-            key={item.name}
-            to={item.href}
-            className={`flex items-center px-4 py-3 mb-2 rounded-lg transition-all duration-200 ${
-              isActive
-                ? 'bg-white/20 text-white shadow-lg'
-                : 'text-white/70 hover:bg-white/10 hover:text-white'
-            }`}
-            onClick={onLinkClick}
-          >
-            <item.icon className="h-5 w-5 mr-3" />
-            {item.name}
-          </Link>
-        );
-      })}
-    </nav>
-  </div>
-);
+  );
+};
 
 const Layout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const location = useLocation();
   const { user } = useUser();
+  const { memberships, isLoading } = useTenant();
+  const { needsOnboarding } = useOnboardingRequired();
 
   // Verificar se o usuário é Master (temporariamente desabilitado)
   const isMaster = false; // Temporariamente false para evitar erros
+
+  // Verificar se precisa mostrar modal de onboarding
+  useEffect(() => {
+    if (!isLoading && needsOnboarding && !showOnboardingModal) {
+      setShowOnboardingModal(true);
+    }
+  }, [isLoading, needsOnboarding, showOnboardingModal]);
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: Home },
@@ -124,12 +173,30 @@ const Layout = ({ children }) => {
               </h2>
             </div>
           </div>
+          
+          {/* Informações do Tenant no Header */}
+          <div className="hidden md:flex items-center mr-4">
+            <TenantSwitcher variant="compact" />
+          </div>
+          
           <UserButton />
         </div>
         <main className="p-4 sm:p-6 lg:p-8">
-          {children}
+          {/* Banner de aviso de expiração */}
+          <ExpirationWarningBanner className="mb-6" />
+          
+          {/* Proteção contra tenants expirados */}
+          <TenantExpirationGuard>
+            {children}
+          </TenantExpirationGuard>
         </main>
       </div>
+
+      {/* Modal de Onboarding */}
+      <ModalVinculoCnpj
+        isOpen={showOnboardingModal}
+        onClose={() => setShowOnboardingModal(false)}
+      />
     </div>
   );
 };

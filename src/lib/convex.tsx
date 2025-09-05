@@ -1,9 +1,12 @@
 import { ConvexProvider, ConvexReactClient } from "convex/react";
 import { ReactNode } from "react";
+import { DynamicConvexProvider, useDynamicConvex } from "./convexClient";
 
 /**
  * Configuração do cliente Convex para integração com React
  * Fornece o contexto necessário para usar as funções do banco
+ * 
+ * IMPORTANTE: Agora suporta clientes dinâmicos por tenant (feature flag)
  */
 
 // URL do seu projeto Convex (substitua pela sua URL real)
@@ -15,19 +18,36 @@ if (!convexUrl || convexUrl === 'https://placeholder.convex.cloud') {
   console.warn("🔗 Exemplo: VITE_CONVEX_URL=https://seu-projeto.convex.cloud");
 }
 
-// Criar cliente Convex
+// Criar cliente Convex padrão
 export const convex = new ConvexReactClient(convexUrl);
 
 /**
  * Provider do Convex para envolver a aplicação
  * Permite que todos os componentes acessem o banco de dados
  * 
+ * IMPORTANTE: Agora suporta clientes dinâmicos por tenant (feature flag)
+ * 
  * @param children - Componentes React filhos que terão acesso ao contexto Convex
  * @returns Provider do Convex envolvendo os componentes filhos
  */
 export function ConvexClientProvider({ children }: { children: ReactNode }) {
   return (
-    <ConvexProvider client={convex}>
+    <DynamicConvexProvider>
+      <ConvexProviderWrapper>
+        {children}
+      </ConvexProviderWrapper>
+    </DynamicConvexProvider>
+  );
+}
+
+/**
+ * Wrapper interno que usa o cliente dinâmico
+ */
+function ConvexProviderWrapper({ children }: { children: ReactNode }) {
+  const { currentClient } = useDynamicConvex();
+  
+  return (
+    <ConvexProvider client={currentClient}>
       {children}
     </ConvexProvider>
   );
@@ -37,9 +57,28 @@ export function ConvexClientProvider({ children }: { children: ReactNode }) {
  * Hook personalizado para verificar se o Convex está conectado
  * Útil para mostrar status de conexão
  * 
+ * IMPORTANTE: Agora usa o sistema dinâmico de clientes
+ * 
  * @returns Objeto contendo o status de conexão com o Convex
  */
 export function useConvexStatus() {
-  // Esta função será implementada quando criarmos os hooks personalizados
-  return { isConnected: true };
+  try {
+    const { isConnected, connectionError, currentTenantConfig } = useDynamicConvex();
+    
+    return {
+      isConnected,
+      error: connectionError,
+      tenantConfig: currentTenantConfig,
+      hasOwnProject: currentTenantConfig ? 
+        currentTenantConfig.provisioningStatus === 'provisioned' : false
+    };
+  } catch (error) {
+    // Fallback para quando não está dentro do provider dinâmico
+    return {
+      isConnected: true,
+      error: null,
+      tenantConfig: null,
+      hasOwnProject: false
+    };
+  }
 }

@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
+import { withTenantAuth } from "./utils/auth";
 
 /**
  * Funções para gerenciar produção no sistema HotDog Manager
@@ -12,14 +13,16 @@ import { Id } from "./_generated/dataModel";
  * Retorna o primeiro usuário ativo encontrado
  */
 export const getDefaultUser = query({
-  args: {},
-  handler: async (ctx) => {
-    const user = await ctx.db
-      .query("users")
-      .withIndex("by_active", (q) => q.eq("isActive", true))
-      .first();
-    
-    return user;
+  args: { tenantId: v.id("tenants") },
+  handler: async (ctx, args) => {
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_active", (q) => q.eq("isActive", true))
+        .first();
+      
+      return user;
+    });
   },
 });
 
@@ -29,20 +32,23 @@ export const getDefaultUser = query({
  * Separa produtos por grupo e aplica regras específicas
  */
 export const listProductionItems = query({
-  args: {},
-  handler: async (ctx) => {
-    // Buscar todas as vendas pendentes
-    const pendingSales = await ctx.db
-      .query("sales")
-      .withIndex("by_status", (q) => q.eq("status", "pendente"))
-      .collect();
+  args: { tenantId: v.id("tenants") },
+  handler: async (ctx, args) => {
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      // Buscar todas as vendas pendentes
+      const pendingSales = await ctx.db
+        .query("sales")
+        .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+        .filter((q) => q.eq(q.field("status"), "pendente"))
+        .collect();
 
     // Para cada venda, buscar os itens e seus status de produção
     const productionOrders = await Promise.all(
       pendingSales.map(async (sale) => {
         const saleItems = await ctx.db
           .query("saleItems")
-          .withIndex("by_sale", (q) => q.eq("saleId", sale._id))
+          .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+          .filter((q) => q.eq(q.field("saleId"), sale._id))
           .collect();
 
         // Buscar status de produção de cada item
@@ -61,7 +67,8 @@ export const listProductionItems = query({
             // Buscar registro de produção existente
             const productionItem = await ctx.db
               .query("productionItems")
-              .withIndex("by_sale_item", (q) => q.eq("saleItemId", item._id))
+              .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+              .filter((q) => q.eq(q.field("saleItemId"), item._id))
               .first();
 
             let productionStatus = productionItem?.productionStatus || "pendente";
@@ -96,12 +103,13 @@ export const listProductionItems = query({
 
     // Filtrar apenas vendas que têm itens não entregues E não concluídos
     // Itens "concluido" (Pronto) não aparecem na tela de produção
-    return productionOrders.filter(order => 
-      order.items.some(item => 
-        item.productionStatus !== "entregue" && 
-        item.productionStatus !== "concluido"
-      )
-    );
+      return productionOrders.filter(order => 
+        order.items.some(item => 
+          item.productionStatus !== "entregue" && 
+          item.productionStatus !== "concluido"
+        )
+      );
+    });
   },
 });
 
@@ -110,10 +118,15 @@ export const listProductionItems = query({
  * Usado na página de acompanhamento de pedidos
  */
 export const getAllProductionItems = query({
-  args: {},
-  handler: async (ctx) => {
-    const productionItems = await ctx.db.query("productionItems").collect();
-    return productionItems;
+  args: { tenantId: v.id("tenants") },
+  handler: async (ctx, args) => {
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      const productionItems = await ctx.db
+        .query("productionItems")
+        .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+        .collect();
+      return productionItems;
+    });
   },
 });
 
@@ -122,29 +135,33 @@ export const getAllProductionItems = query({
  * Cria registros de produção para bebidas como já concluídas
  */
 export const initializeBeverages = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const now = Date.now();
-    
-    // Buscar todas as vendas pendentes
-    const pendingSales = await ctx.db
-      .query("sales")
-      .withIndex("by_status", (q) => q.eq("status", "pendente"))
-      .collect();
+  args: { tenantId: v.id("tenants") },
+  handler: async (ctx, args) => {
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      const now = Date.now();
+      
+      // Buscar todas as vendas pendentes
+      const pendingSales = await ctx.db
+        .query("sales")
+        .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+        .filter((q) => q.eq(q.field("status"), "pendente"))
+        .collect();
 
     let initializedCount = 0;
 
     for (const sale of pendingSales) {
       const saleItems = await ctx.db
         .query("saleItems")
-        .withIndex("by_sale", (q) => q.eq("saleId", sale._id))
+        .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+        .filter((q) => q.eq(q.field("saleId"), sale._id))
         .collect();
 
       for (const item of saleItems) {
         // Verificar se já existe registro de produção
         const existingProduction = await ctx.db
           .query("productionItems")
-          .withIndex("by_sale_item", (q) => q.eq("saleItemId", item._id))
+          .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+          .filter((q) => q.eq(q.field("saleItemId"), item._id))
           .first();
 
         if (existingProduction) continue;
@@ -162,6 +179,7 @@ export const initializeBeverages = mutation({
         if (isBeverage) {
           // Criar registro de produção para bebida como já concluída
           await ctx.db.insert("productionItems", {
+            tenantId: args.tenantId,
             saleItemId: item._id,
             saleId: sale._id,
             productionStatus: "concluido",
@@ -177,7 +195,8 @@ export const initializeBeverages = mutation({
       }
     }
 
-    return { initializedCount, message: `${initializedCount} bebidas inicializadas automaticamente` };
+      return { initializedCount, message: `${initializedCount} bebidas inicializadas automaticamente` };
+    });
   },
 });
 

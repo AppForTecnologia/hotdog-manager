@@ -13,9 +13,12 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
+import type * as admin_migrateTenantId from "../admin/migrateTenantId.js";
 import type * as cashRegister from "../cashRegister.js";
 import type * as categories from "../categories.js";
+import type * as crons from "../crons.js";
 import type * as customers from "../customers.js";
+import type * as memberships from "../memberships.js";
 import type * as productGroups from "../productGroups.js";
 import type * as production from "../production.js";
 import type * as products from "../products.js";
@@ -36,9 +39,12 @@ import type * as utils_cnpj from "../utils/cnpj.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
+  "admin/migrateTenantId": typeof admin_migrateTenantId;
   cashRegister: typeof cashRegister;
   categories: typeof categories;
+  crons: typeof crons;
   customers: typeof customers;
+  memberships: typeof memberships;
   productGroups: typeof productGroups;
   production: typeof production;
   products: typeof products;

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { withTenantAuth } from "./utils/auth";
 
 /**
  * Funções para gerenciar clientes no sistema
@@ -11,13 +12,16 @@ import { mutation, query } from "./_generated/server";
  * @returns Array de clientes ativos ordenados por nome
  */
 export const listActive = query({
-  args: {},
-  handler: async (ctx) => {
-    return await ctx.db
-      .query("customers")
-      .withIndex("by_active", (q) => q.eq("isActive", true))
-      .order("asc")
-      .collect();
+  args: { tenantId: v.id("tenants") },
+  handler: async (ctx, args) => {
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      return await ctx.db
+        .query("customers")
+        .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+        .filter((q) => q.eq(q.field("isActive"), true))
+        .order("asc")
+        .collect();
+    });
   },
 });
 
@@ -27,19 +31,25 @@ export const listActive = query({
  * @returns Array de clientes que correspondem à busca
  */
 export const search = query({
-  args: { searchTerm: v.string() },
+  args: { 
+    tenantId: v.id("tenants"),
+    searchTerm: v.string() 
+  },
   handler: async (ctx, args) => {
-    const term = args.searchTerm.toLowerCase();
-    
-    const allCustomers = await ctx.db
-      .query("customers")
-      .withIndex("by_active", (q) => q.eq("isActive", true))
-      .collect();
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      const term = args.searchTerm.toLowerCase();
+      
+      const allCustomers = await ctx.db
+        .query("customers")
+        .withIndex("byTenant", (q) => q.eq("tenantId", args.tenantId))
+        .filter((q) => q.eq(q.field("isActive"), true))
+        .collect();
 
-    return allCustomers.filter(customer => 
-      customer.name.toLowerCase().includes(term) ||
-      customer.phone.includes(term)
-    );
+      return allCustomers.filter(customer => 
+        customer.name.toLowerCase().includes(term) ||
+        customer.phone.includes(term)
+      );
+    });
   },
 });
 
@@ -53,22 +63,26 @@ export const search = query({
  */
 export const create = mutation({
   args: {
+    tenantId: v.id("tenants"),
     name: v.string(),
     phone: v.string(),
     address: v.string(),
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
-    
-    return await ctx.db.insert("customers", {
-      name: args.name,
-      phone: args.phone,
-      address: args.address,
-      notes: args.notes,
-      isActive: true,
-      createdAt: now,
-      updatedAt: now,
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      const now = Date.now();
+      
+      return await ctx.db.insert("customers", {
+        tenantId: args.tenantId,
+        name: args.name,
+        phone: args.phone,
+        address: args.address,
+        notes: args.notes,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      });
     });
   },
 });
@@ -84,6 +98,7 @@ export const create = mutation({
  */
 export const update = mutation({
   args: {
+    tenantId: v.id("tenants"),
     customerId: v.id("customers"),
     name: v.string(),
     phone: v.string(),
@@ -91,15 +106,22 @@ export const update = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.customerId, {
-      name: args.name,
-      phone: args.phone,
-      address: args.address,
-      notes: args.notes,
-      updatedAt: Date.now(),
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      const customer = await ctx.db.get(args.customerId);
+      if (!customer || customer.tenantId !== args.tenantId) {
+        throw new Error("Cliente não encontrado");
+      }
+
+      await ctx.db.patch(args.customerId, {
+        name: args.name,
+        phone: args.phone,
+        address: args.address,
+        notes: args.notes,
+        updatedAt: Date.now(),
+      });
+      
+      return args.customerId;
     });
-    
-    return args.customerId;
   },
 });
 
@@ -110,16 +132,24 @@ export const update = mutation({
  */
 export const deactivate = mutation({
   args: {
+    tenantId: v.id("tenants"),
     customerId: v.id("customers"),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.customerId, {
-      isActive: false,
-      deletedAt: Date.now(),
-      updatedAt: Date.now(),
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      const customer = await ctx.db.get(args.customerId);
+      if (!customer || customer.tenantId !== args.tenantId) {
+        throw new Error("Cliente não encontrado");
+      }
+
+      await ctx.db.patch(args.customerId, {
+        isActive: false,
+        deletedAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      
+      return args.customerId;
     });
-    
-    return args.customerId;
   },
 });
 
@@ -130,9 +160,16 @@ export const deactivate = mutation({
  */
 export const getById = query({
   args: {
+    tenantId: v.id("tenants"),
     customerId: v.id("customers"),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.customerId);
+    return await withTenantAuth(ctx, args.tenantId, async (userId, tenant, membership) => {
+      const customer = await ctx.db.get(args.customerId);
+      if (!customer || customer.tenantId !== args.tenantId) {
+        return null;
+      }
+      return customer;
+    });
   },
 });

@@ -21,6 +21,11 @@ export const config = {
     name: 'HotDog Manager',
     version: '1.0.0',
     description: 'Sistema de gerenciamento para lanchonetes'
+  },
+
+  // Root Admin Settings
+  root: {
+    allowlist: (import.meta.env.VITE_ROOT_ALLOWLIST || 'appfortecnologia@gmail.com').split(',').map(email => email.trim())
   }
 };
 

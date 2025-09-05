@@ -441,4 +441,19 @@ export default defineSchema({
     .index("by_created_at", ["createdAt"])
     .index("byTenant", ["tenantId"]),
 
+  /**
+   * Tabela para controle de rate limiting
+   * Armazena tentativas de acesso para controle de limite por usuário
+   */
+  rateLimitAttempts: defineTable({
+    // ID do usuário no Clerk
+    userId: v.string(),
+    // Timestamp da tentativa
+    timestamp: v.number(),
+    // Se a tentativa foi bem-sucedida
+    success: v.boolean(),
+  })
+    .index("byUser", ["userId"])
+    .index("byTimestamp", ["timestamp"]),
+
 });
