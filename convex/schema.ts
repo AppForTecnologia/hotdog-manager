@@ -92,7 +92,7 @@ export default defineSchema({
   })
     .index("byTenant", ["tenantId"])
     .index("byUser", ["userId"])
-    .index("byTenantAndUser", ["tenantId", "userId"], { unique: true }),
+    .index("byTenantAndUser", ["tenantId", "userId"]),
 
   /**
    * Tabela de categorias de produtos
