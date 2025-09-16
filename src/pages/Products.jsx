@@ -12,7 +12,36 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useUser } from "@clerk/clerk-react";
 
-const Products = () => {
+class ProductsErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error('Erro na tela de Produtos:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="text-center py-12">
+          <div className="text-6xl mb-4">⚠️</div>
+          <h3 className="text-xl font-semibold text-white mb-2">Ocorreu um erro ao carregar Produtos</h3>
+          <p className="text-white/60">Confira o console do navegador para detalhes e me envie o erro.</p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// Componente interno que contém toda a lógica da página
+const ProductsInner = () => {
   const { user } = useUser();
   const productGroups = useQuery(api.products.listGroupedByCategory) || {};
   const allGroups = useQuery(api.productGroups.listActive) || [];
@@ -23,6 +52,8 @@ const Products = () => {
   const createGroup = useMutation(api.productGroups.create);
   const updateGroupOrder = useMutation(api.productGroups.updateOrder);
   const initializeGroups = useMutation(api.productGroups.initializeDefaultGroups);
+  
+  
   
   const [searchTerm, setSearchTerm] = useState('');
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -47,10 +78,13 @@ const Products = () => {
 
   // Inicializar grupos padrão se não existirem
   useEffect(() => {
-    if (Object.keys(productGroups).length === 0 && allGroups.length === 0) {
-      initializeGroups();
+    if (allGroups.length === 0 && initializeGroups) {
+      console.log('🔍 Inicializando grupos padrão...');
+      initializeGroups().catch(error => {
+        console.error('❌ Erro ao inicializar grupos:', error);
+      });
     }
-  }, [productGroups, allGroups, initializeGroups]);
+  }, [allGroups.length, initializeGroups]);
 
   // Atualizar ordem dos grupos quando a lista mudar
   useEffect(() => {
@@ -123,7 +157,7 @@ const Products = () => {
       name: product.name,
       price: product.price.toString(),
       description: product.description || '',
-      image: product.image || '',
+      image: product.imageUrl || '',
       categoryId: product.categoryId || ''
     });
     setIsDialogOpen(true);
@@ -149,6 +183,7 @@ const Products = () => {
   const handleCreateGroup = async (e) => {
     e.preventDefault();
     
+    
     if (!groupFormData.name || !groupFormData.title) {
       toast({
         title: "Erro",
@@ -161,13 +196,15 @@ const Products = () => {
     try {
       const keywords = groupFormData.keywords.split(',').map(k => k.trim()).filter(k => k);
       
-      await createGroup({
+      
+      const result = await createGroup({
         name: groupFormData.name,
         title: groupFormData.title,
         icon: groupFormData.icon || '📦',
         color: groupFormData.color,
         keywords: keywords
       });
+      
       
       toast({
         title: "Sucesso!",
@@ -178,10 +215,14 @@ const Products = () => {
       setGroupFormData({ name: '', title: '', icon: '', color: '#F97316', keywords: '' });
       
     } catch (error) {
-      console.error('Erro ao criar grupo:', error);
+      console.error('❌ Detalhes do erro:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
       toast({
         title: "Erro",
-        description: "Erro ao criar grupo. Tente novamente.",
+        description: `Erro ao criar grupo: ${error.message}`,
         variant: "destructive"
       });
     }
@@ -212,6 +253,7 @@ const Products = () => {
       });
     }
   };
+
 
   const moveGroupUp = (index) => {
     if (index > 0) {
@@ -264,6 +306,7 @@ const Products = () => {
         </div>
         
         <div className="flex gap-2">
+          
           <Dialog open={isGroupDialogOpen} onOpenChange={setIsGroupDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" className="border-white/20 text-white hover:bg-white/10">
@@ -582,9 +625,9 @@ const Products = () => {
                       )}
                     </div>
 
-                    {product.image ? (
+                    {product.imageUrl ? (
                       <img 
-                        src={product.image} 
+                        src={product.imageUrl} 
                         alt={product.name}
                         className="w-full h-32 object-cover rounded-lg mb-3"
                       />
@@ -600,7 +643,7 @@ const Products = () => {
                       <div className="flex justify-between items-center">
                         <span className="text-white/70">Preço:</span>
                         <span className="text-xl font-bold text-green-400">
-                          R$ {product.price.toFixed(2)}
+                          R$ {Number(product.price ?? 0).toFixed(2)}
                         </span>
                       </div>
                       
@@ -659,5 +702,12 @@ const Products = () => {
     </div>
   );
 };
+
+// Componente exportado que envolve com ErrorBoundary
+const Products = () => (
+  <ProductsErrorBoundary>
+    <ProductsInner />
+  </ProductsErrorBoundary>
+);
 
 export default Products;

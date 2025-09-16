@@ -19,6 +19,8 @@ export default defineSchema({
     fullName: v.optional(v.string()),
     // Função/role no sistema (admin, vendedor, etc.)
     role: v.optional(v.string()),
+    // CNPJ do usuário (opcional)
+    cnpj: v.optional(v.string()),
     // Data de criação
     createdAt: v.number(),
     // Data de última atualização

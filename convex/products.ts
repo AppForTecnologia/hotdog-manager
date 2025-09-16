@@ -97,6 +97,7 @@ export const listGroupedByCategory = query({
         );
       });
 
+
       groups[productGroup.name].categories = matchingCategories;
     }
 
@@ -106,6 +107,7 @@ export const listGroupedByCategory = query({
         group.categories.some((groupCat: any) => groupCat._id === cat._id)
       );
     });
+
 
     // Associar categorias não atribuídas ao primeiro grupo disponível
     if (unassignedCategories.length > 0 && Object.keys(groups).length > 0) {
@@ -128,6 +130,7 @@ export const listGroupedByCategory = query({
             )
           )
           .collect();
+
 
         // Adicionar informações da categoria aos produtos
         const productsWithCategory = products.map(product => ({

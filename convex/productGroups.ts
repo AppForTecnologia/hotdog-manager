@@ -20,7 +20,9 @@ export const listActive = query({
       .collect();
 
     // Ordenar por ordem de exibição
-    return groups.sort((a, b) => a.order - b.order);
+    const sortedGroups = groups.sort((a, b) => a.order - b.order);
+    
+    return sortedGroups;
   },
 });
 
@@ -70,7 +72,7 @@ export const create = mutation({
     const maxOrder = groups.reduce((max, group) => Math.max(max, group.order), 0);
     const now = Date.now();
 
-    const groupId = await ctx.db.insert("productGroups", {
+    const groupData = {
       name: args.name.toLowerCase(),
       title: args.title,
       icon: args.icon,
@@ -80,7 +82,9 @@ export const create = mutation({
       keywords: args.keywords.map(k => k.toLowerCase()),
       createdAt: now,
       updatedAt: now,
-    });
+    };
+
+    const groupId = await ctx.db.insert("productGroups", groupData);
 
     return groupId;
   },
@@ -218,6 +222,64 @@ export const initializeDefaultGroups = mutation({
 
     return { 
       message: "Grupos padrão criados com sucesso", 
+      count: createdGroups.length,
+      groups: createdGroups 
+    };
+  },
+});
+
+/**
+ * Mutation para forçar reinicialização dos grupos padrão
+ * Remove grupos existentes e cria novos grupos padrão
+ */
+export const forceInitializeDefaultGroups = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    
+    // Remover todos os grupos existentes
+    const existingGroups = await ctx.db
+      .query("productGroups")
+      .collect();
+    
+    for (const group of existingGroups) {
+      await ctx.db.delete(group._id);
+    }
+    
+    // Criar grupos padrão
+    const defaultGroups = [
+      {
+        name: "lanches",
+        title: "Lanches",
+        icon: "🌭",
+        color: "#F97316", // orange-500
+        order: 1,
+        keywords: ["lanche", "hambur", "hot dog", "sanduiche", "x-"],
+      },
+      {
+        name: "bebidas",
+        title: "Bebidas",
+        icon: "🥤",
+        color: "#3B82F6", // blue-500
+        order: 2,
+        keywords: ["bebida", "refri", "suco", "água", "refrigerante"],
+      },
+    ];
+
+    const createdGroups = [];
+    
+    for (const group of defaultGroups) {
+      const groupId = await ctx.db.insert("productGroups", {
+        ...group,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      createdGroups.push(groupId);
+    }
+
+    return { 
+      message: "Grupos padrão reinicializados com sucesso", 
       count: createdGroups.length,
       groups: createdGroups 
     };

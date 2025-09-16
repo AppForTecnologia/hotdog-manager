@@ -255,4 +255,107 @@ export const searchByName = query({
   },
 });
 
+/**
+ * Mutation para inicializar categorias padrão
+ * Cria categorias básicas se não existirem
+ */
+export const initializeDefaultCategories = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const existingCategories = await ctx.db
+      .query("categories")
+      .collect();
+
+    if (existingCategories.length > 0) {
+      return { message: "Categorias já existem", count: existingCategories.length };
+    }
+
+    const now = Date.now();
+    
+    // Criar categorias padrão
+    const defaultCategories = [
+      {
+        name: "Lanches",
+        description: "Sanduíches, hambúrgueres e hot dogs",
+        color: "#F97316",
+      },
+      {
+        name: "Bebidas",
+        description: "Refrigerantes, sucos e águas",
+        color: "#3B82F6",
+      },
+    ];
+
+    const createdCategories = [];
+    
+    for (const category of defaultCategories) {
+      const categoryId = await ctx.db.insert("categories", {
+        ...category,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      createdCategories.push(categoryId);
+    }
+
+    return { 
+      message: "Categorias padrão criadas com sucesso", 
+      count: createdCategories.length,
+      categories: createdCategories 
+    };
+  },
+});
+
+/**
+ * Mutation para forçar reinicialização das categorias padrão
+ * Remove categorias existentes e cria novas categorias padrão
+ */
+export const forceInitializeDefaultCategories = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    
+    // Remover todas as categorias existentes
+    const existingCategories = await ctx.db
+      .query("categories")
+      .collect();
+    
+    for (const category of existingCategories) {
+      await ctx.db.delete(category._id);
+    }
+    
+    // Criar categorias padrão
+    const defaultCategories = [
+      {
+        name: "Lanches",
+        description: "Sanduíches, hambúrgueres e hot dogs",
+        color: "#F97316",
+      },
+      {
+        name: "Bebidas",
+        description: "Refrigerantes, sucos e águas",
+        color: "#3B82F6",
+      },
+    ];
+
+    const createdCategories = [];
+    
+    for (const category of defaultCategories) {
+      const categoryId = await ctx.db.insert("categories", {
+        ...category,
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+      createdCategories.push(categoryId);
+    }
+
+    return { 
+      message: "Categorias padrão reinicializadas com sucesso", 
+      count: createdCategories.length,
+      categories: createdCategories 
+    };
+  },
+});
+
 
