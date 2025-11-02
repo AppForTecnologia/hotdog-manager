@@ -1,504 +1,198 @@
+
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Clock, 
-  CheckCircle, 
-  Truck, 
-  AlertCircle, 
-  RefreshCw, 
-  Filter,
-  Search,
-  Eye,
-  Phone,
-  MapPin,
-  User
-} from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { Search, Truck, CheckCircle, Package } from 'lucide-react';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/use-toast';
-import { useQuery, useMutation } from "convex/react";
-import { api } from "../../convex/_generated/api";
 
 const Orders = () => {
+  const [orders, setOrders] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [filter, setFilter] = useState('today');
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [orderTypeFilter, setOrderTypeFilter] = useState('all');
-
-  // Buscar dados do Convex
-  const sales = useQuery(api.sales.listAll) || [];
-  const saleItems = useQuery(api.sales.getSaleItemsWithProducts) || [];
-  const productionItems = useQuery(api.production.getAllProductionItems) || [];
-  const customers = useQuery(api.customers.listActive) || [];
-  
-  // Mutation para marcar pedido como entregue
-  const deliverItem = useMutation(api.production.deliverItem);
-
-  // Estados para filtros
-  const [filteredOrders, setFilteredOrders] = useState([]);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState(null);
 
   useEffect(() => {
-    console.log('Orders component mounted');
-    console.log('Sales:', sales);
-    console.log('SaleItems:', saleItems);
-    console.log('ProductionItems:', productionItems);
-    console.log('Customers:', customers);
-  }, [sales, saleItems, productionItems, customers]);
+    const fetchAllData = () => {
+      const savedOrders = JSON.parse(localStorage.getItem('orders') || '[]');
+      const savedClients = JSON.parse(localStorage.getItem('clients') || '[]');
+      setOrders(savedOrders);
+      setClients(savedClients);
+    };
+    
+    fetchAllData();
+    const interval = setInterval(fetchAllData, 3000); // Refresh data every 3 seconds
+    return () => clearInterval(interval);
+  }, []);
 
-  useEffect(() => {
-    filterOrders();
-  }, [sales, saleItems, productionItems, customers, searchTerm, statusFilter, orderTypeFilter]);
+  const saveOrders = (newOrders) => {
+    localStorage.setItem('orders', JSON.stringify(newOrders));
+    setOrders(newOrders);
+  };
 
-  const filterOrders = () => {
-    let filtered = sales;
-
-    // IMPORTANTE: Tela de Pedidos só mostra pedidos que estão "Pronto" ou "Entregue"
-    // Pedidos em produção (Pendente, Em Preparo) não aparecem aqui
-    filtered = filtered.filter(sale => {
-      const status = getOrderStatus(sale).status;
-      return status === 'ready' || status === 'delivered';
-    });
-
-    // Filtrar por tipo de pedido
-    if (orderTypeFilter !== 'all') {
-      filtered = filtered.filter(sale => sale.saleType === orderTypeFilter);
-    }
-
-    // Filtrar por status (agora só ready e delivered)
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(sale => getOrderStatus(sale).status === statusFilter);
-    }
-
-    // Filtrar por termo de busca (cliente, produtos, etc.)
-    if (searchTerm) {
-      filtered = filtered.filter(sale => {
-        // Buscar por nome do cliente
-        if (sale.customerId) {
-          const customer = customers.find(c => c._id === sale.customerId);
-          if (customer && customer.name.toLowerCase().includes(searchTerm.toLowerCase())) {
-            return true;
-          }
+  const handleStatusChange = (orderId, newStatus) => {
+    const updatedOrders = orders.map(order => {
+      if (order.id === orderId) {
+        const updatedOrder = { ...order, status: newStatus };
+        if (newStatus === 'Em rota de entrega') {
+          updatedOrder.saidaEntregaEm = new Date().toISOString();
         }
-
-        // Buscar por produtos na venda
-        const saleItemsForSale = saleItems.filter(item => item.saleId === sale._id);
-        const hasMatchingProduct = saleItemsForSale.some(item => 
-          item.product?.name?.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-
-        return hasMatchingProduct;
-      });
-    }
-
-    setFilteredOrders(filtered);
-    console.log('Filtered orders:', filtered);
-  };
-
-  const getOrderStatus = (sale) => {
-    try {
-      // Buscar itens de venda para esta venda
-      const saleItemsForSale = saleItems.filter(item => item.saleId === sale._id);
-      
-      if (saleItemsForSale.length === 0) {
-        return { status: 'pending', label: 'Pendente', icon: Clock, color: 'text-yellow-500' };
+        if (newStatus === 'Entregue') {
+          updatedOrder.entregueEm = new Date().toISOString();
+        }
+        return updatedOrder;
       }
-
-      // Buscar itens de produção para esta venda
-      const productionItemsForSale = productionItems.filter(item => item.saleId === sale._id);
-      
-      // Se não há itens de produção, considerar como "em preparo" (produção ainda não iniciou)
-      if (productionItemsForSale.length === 0) {
-        return { status: 'preparing', label: 'Em Preparo', icon: RefreshCw, color: 'text-orange-500' };
-      }
-
-      // Verificar status dos itens de produção
-      const allCompleted = productionItemsForSale.every(item => 
-        item.productionStatus === 'concluido'
-      );
-      const anyInProduction = productionItemsForSale.some(item => 
-        item.productionStatus === 'em_producao'
-      );
-
-      // Lógica simplificada: produção só controla até "Pronto"
-      if (allCompleted) {
-        return { status: 'ready', label: 'Pronto', icon: Truck, color: 'text-blue-500' };
-      } else if (anyInProduction) {
-        return { status: 'preparing', label: 'Em Preparo', icon: RefreshCw, color: 'text-orange-500' };
-      } else {
-        return { status: 'pending', label: 'Pendente', icon: Clock, color: 'text-yellow-500' };
-      }
-    } catch (error) {
-      console.error('Error in getOrderStatus:', error);
-      return { status: 'pending', label: 'Pendente', icon: Clock, color: 'text-yellow-500' };
-    }
+      return order;
+    });
+    saveOrders(updatedOrders);
+    toast({ title: "Status do Pedido Atualizado!", description: `Pedido movido para "${newStatus}".` });
   };
 
-  const getOrderItems = (saleId) => {
-    return saleItems.filter(item => item.saleId === saleId);
+  const openDetails = (order) => {
+    setSelectedOrder(order);
+    setIsDetailOpen(true);
   };
 
-  const getCustomerInfo = (customerId) => {
-    return customers.find(c => c._id === customerId);
+  const getClientInfo = (clientId) => {
+    return clients.find(c => c.id === clientId);
   };
 
-  const updateOrderStatus = async (saleId, newStatus) => {
-    try {
-      if (newStatus === 'delivered') {
-        // Buscar todos os itens de produção desta venda
-        const saleItemsForSale = saleItems.filter(item => item.saleId === saleId);
-        
-        // Marcar todos os itens como entregues
-        await Promise.all(
-          saleItemsForSale.map(item => 
-            deliverItem({ saleItemId: item._id })
-          )
-        );
-        
-        toast({
-          title: "Pedido entregue!",
-          description: "Status atualizado com sucesso",
-        });
-      }
-    } catch (error) {
-      console.error('Erro ao atualizar status:', error);
-      toast({
-        title: "Erro",
-        description: `Erro ao marcar como entregue: ${error.message}`,
-        variant: "destructive"
-      });
-    }
-  };
+  const filteredOrders = orders.filter(order => {
+    const today = new Date().toDateString();
+    const orderDate = new Date(order.createdAt).toDateString();
+    
+    let passesFilter = true;
+    if (filter === 'today') passesFilter = orderDate === today;
+    if (filter === 'open') passesFilter = !['Entregue', 'Cancelado', 'pending'].includes(order.status);
+    if (filter === 'delivery_route') passesFilter = order.status === 'Em rota de entrega';
+    if (filter === 'delivered') passesFilter = order.status === 'Entregue';
+    if (filter === 'local') passesFilter = order.type === 'Local';
+    if (filter === 'delivery') passesFilter = order.type === 'Delivery';
 
-  const getStatusBadgeColor = (status) => {
-    switch (status) {
-      case 'pending':
-        return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-      case 'preparing':
-        return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
-      case 'ready':
-        return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-      case 'delivered':
-        return 'bg-green-500/20 text-green-400 border-green-500/30';
-      default:
-        return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
-    }
-  };
+    if (!passesFilter) return false;
 
-  // Renderizar ícone de status de forma mais simples
-  const renderStatusIcon = (iconComponent, className) => {
-    try {
-      const IconComponent = iconComponent;
-      return <IconComponent className={className} />;
-    } catch (error) {
-      console.error('Error rendering icon:', error);
-      return <Clock className={className} />;
-    }
-  };
-
-  console.log('Rendering Orders component');
+    const searchTermLower = searchTerm.toLowerCase();
+    const client = order.clientId ? getClientInfo(order.clientId) : null;
+    return (
+      (order.tableNumber && order.tableNumber.toLowerCase().includes(searchTermLower)) ||
+      (client && client.name.toLowerCase().includes(searchTermLower)) ||
+      (client && client.phone.includes(searchTermLower)) ||
+      order.id.toString().includes(searchTermLower)
+    );
+  });
 
   return (
     <div className="space-y-6">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-                 <h1 className="text-2xl font-bold text-white mb-2">Acompanhamento de Pedidos</h1>
-         <p className="text-white/70">Pedidos prontos para entrega - marque como entregue após servir o cliente</p>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Pedidos Operacional</h1>
+          <p className="text-muted-foreground">Acompanhe e gerencie as entregas e pedidos locais.</p>
+        </div>
+        <div className="relative w-full sm:w-auto">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+          <Input placeholder="Buscar pedido..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 w-full" />
+        </div>
       </motion.div>
 
-      
+      <Tabs value={filter} onValueChange={setFilter}>
+        <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6">
+          <TabsTrigger value="today">Hoje</TabsTrigger>
+          <TabsTrigger value="open">Abertos</TabsTrigger>
+          <TabsTrigger value="delivery_route">Em Rota</TabsTrigger>
+          <TabsTrigger value="delivered">Entregues</TabsTrigger>
+          <TabsTrigger value="local">Local</TabsTrigger>
+          <TabsTrigger value="delivery">Delivery</TabsTrigger>
+        </TabsList>
+      </Tabs>
 
-      {/* Filtros */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-      >
-        <Card className="glass-effect border-white/20">
-          <CardHeader>
-            <CardTitle className="text-white flex items-center">
-              <Filter className="h-5 w-5 mr-2" />
-              Filtros
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredOrders.map((order, index) => {
+          const client = order.clientId ? getClientInfo(order.clientId) : null;
+          return (
+            <motion.div key={order.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.1 }}>
+              <Card className="glass-effect h-full flex flex-col">
+                <CardHeader>
+                  <CardTitle className="text-foreground flex justify-between items-center">
+                    <span>{order.type === 'Local' ? order.tableNumber : `Delivery: ${client?.name || 'Cliente não encontrado'}`}</span>
+                    <span className="text-sm text-muted-foreground">{new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">Status: {order.status || 'Pendente'}</p>
+                </CardHeader>
+                <CardContent className="flex-1 space-y-3">
+                  {order.items.slice(0, 3).map(item => (
+                    <p key={item.itemId} className="text-sm text-muted-foreground">{item.quantity}x {item.name}</p>
+                  ))}
+                  {order.items.length > 3 && <p className="text-sm text-muted-foreground">... e mais {order.items.length - 3} itens.</p>}
+                </CardContent>
+                <CardContent className="flex flex-col sm:flex-row gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => openDetails(order)}>Detalhes</Button>
+                  {order.type === 'Delivery' && order.status !== 'Em rota de entrega' && order.status !== 'Entregue' && (
+                    <Button className="flex-1 bg-orange-500 hover:bg-orange-600" onClick={() => handleStatusChange(order.id, 'Em rota de entrega')}>
+                      <Truck className="h-4 w-4 mr-2" />
+                      Entregar
+                    </Button>
+                  )}
+                  {order.type === 'Delivery' && order.status === 'Em rota de entrega' && (
+                    <Button className="flex-1 bg-green-500 hover:bg-green-600" onClick={() => handleStatusChange(order.id, 'Entregue')}>
+                      <CheckCircle className="h-4 w-4 mr-2" />
+                      Finalizar
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          );
+        })}
+      </div>
+
+      {filteredOrders.length === 0 && (
+        <div className="col-span-full text-center py-16">
+          <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 0.2 }}>
+            <Package className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+            <h3 className="text-2xl font-bold text-foreground">Nenhum pedido encontrado</h3>
+            <p className="text-muted-foreground">Tente um filtro ou termo de busca diferente.</p>
+          </motion.div>
+        </div>
+      )}
+
+      <Dialog open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+        <DialogContent className="glass-effect">
+          <DialogHeader>
+            <DialogTitle className="text-foreground">Detalhes do Pedido</DialogTitle>
+          </DialogHeader>
+          {selectedOrder && (
+            <div className="space-y-4">
+              {selectedOrder.type === 'Delivery' && getClientInfo(selectedOrder.clientId) && (
+                <div className="p-3 rounded-lg bg-accent">
+                  <h4 className="font-semibold text-foreground">Cliente</h4>
+                  <p className="text-sm text-muted-foreground">Nome: {getClientInfo(selectedOrder.clientId).name}</p>
+                  <p className="text-sm text-muted-foreground">Telefone: {getClientInfo(selectedOrder.clientId).phone}</p>
+                  <p className="text-sm text-muted-foreground">Endereço: {selectedOrder.deliveryAddress}</p>
+                </div>
+              )}
               <div>
-                <Label htmlFor="search" className="text-white">Buscar</Label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-white/50" />
-                  <Input
-                    id="search"
-                    placeholder="Cliente, produto..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="bg-white/10 border-white/20 text-white pl-10"
-                  />
+                <h4 className="font-semibold text-foreground mb-2">Itens do Pedido</h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {selectedOrder.items.map(item => (
+                    <div key={item.itemId} className="flex justify-between p-2 rounded bg-accent/50">
+                      <p className="text-foreground">{item.quantity}x {item.name}</p>
+                      <p className="text-green-400">R$ {(item.price * item.quantity).toFixed(2)}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
-              
-              <div>
-                <Label htmlFor="status" className="text-white">Status</Label>
-                                 <select
-                   id="status"
-                   value={statusFilter}
-                   onChange={(e) => setStatusFilter(e.target.value)}
-                   className="w-full bg-gray-800 border border-white/20 text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                 >
-                   <option value="all" className="bg-gray-800 text-white">Todos os Status</option>
-                   <option value="ready" className="bg-gray-800 text-white">Pronto</option>
-                   <option value="delivered" className="bg-gray-800 text-white">Entregue</option>
-                 </select>
-              </div>
-
-              <div>
-                <Label htmlFor="orderType" className="text-white">Tipo de Pedido</Label>
-                <select
-                  id="orderType"
-                  value={orderTypeFilter}
-                  onChange={(e) => setOrderTypeFilter(e.target.value)}
-                  className="w-full bg-gray-800 border border-white/20 text-white rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="all" className="bg-gray-800 text-white">Todos os Tipos</option>
-                  <option value="local" className="bg-gray-800 text-white">Local</option>
-                  <option value="delivery" className="bg-gray-800 text-white">Delivery</option>
-                </select>
-              </div>
-
-              <div className="flex items-end">
-                <Button 
-                  onClick={() => {
-                    setSearchTerm('');
-                    setStatusFilter('all');
-                    setOrderTypeFilter('all');
-                  }} 
-                  variant="outline" 
-                  size="sm"
-                  className="border-white/20 text-white hover:bg-white/10 w-full"
-                >
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Limpar Filtros
-                </Button>
+              <div className="border-t border-border pt-2 text-right">
+                <p className="text-lg font-bold text-foreground">Total: R$ {selectedOrder.total.toFixed(2)}</p>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Lista de Pedidos */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="space-y-4"
-      >
-        {filteredOrders.length === 0 ? (
-          <Card className="glass-effect border-white/20">
-            <CardContent className="p-8 text-center">
-              <Clock className="h-12 w-12 text-white/40 mx-auto mb-4" />
-              <p className="text-white/60 text-lg">Nenhum pedido encontrado</p>
-              <p className="text-white/40 text-sm">Tente ajustar os filtros ou aguarde novos pedidos</p>
-            </CardContent>
-          </Card>
-        ) : (
-          filteredOrders.map((sale, index) => {
-            try {
-              const orderStatus = getOrderStatus(sale);
-              const orderItems = getOrderItems(sale._id);
-              const customer = getCustomerInfo(sale.customerId);
-              
-              return (
-                <motion.div
-                  key={sale._id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                >
-                  <Card className="glass-effect border-white/20">
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-4">
-                          <Badge className={`${getStatusBadgeColor(orderStatus.status)} border`}>
-                            {renderStatusIcon(orderStatus.icon, `h-4 w-4 mr-2`)}
-                            {orderStatus.label}
-                          </Badge>
-                          <div>
-                            <h3 className="text-white font-semibold">
-                              Pedido #{index + 1} - {sale.saleType === 'delivery' ? 'Delivery' : 'Local'}
-                            </h3>
-                            <p className="text-white/60 text-sm">
-                              {new Date(sale.saleDate).toLocaleString('pt-BR')}
-                            </p>
-                          </div>
-                        </div>
-                        
-                        <div className="text-right">
-                          <p className="text-white font-bold text-lg">R$ {sale.total.toFixed(2)}</p>
-                          <p className="text-white/60 text-sm">
-                            {orderItems.length} item{orderItems.length !== 1 ? 's' : ''}
-                          </p>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    
-                    <CardContent>
-                      {/* Informações do Cliente (se delivery) */}
-                      {sale.saleType === 'delivery' && customer && (
-                        <div className="mb-4 p-3 bg-white/5 rounded-lg">
-                          <div className="flex items-center space-x-4">
-                            <User className="h-5 w-5 text-blue-400" />
-                            <div>
-                              <p className="text-white font-medium">{customer.name}</p>
-                              <div className="flex items-center space-x-2 text-sm text-white/60">
-                                <Phone className="h-4 w-4" />
-                                <span>{customer.phone}</span>
-                              </div>
-                            </div>
-                            <MapPin className="h-5 w-5 text-green-400" />
-                            <div className="text-sm text-white/60 max-w-xs">
-                              {customer.address}
-                            </div>
-                          </div>
-                          {customer.notes && (
-                            <p className="text-sm text-white/50 mt-2 italic">
-                              📝 {customer.notes}
-                            </p>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Itens do Pedido */}
-                      <div className="space-y-2">
-                        {orderItems.map((item) => (
-                          <div key={item._id} className="flex items-center justify-between p-2 bg-white/5 rounded">
-                            <div className="flex items-center space-x-3">
-                              <span className="text-white font-medium">{item.productName}</span>
-                              <Badge variant="outline" className="text-xs">
-                                Qtd: {item.quantity}
-                              </Badge>
-                              <span className="text-white/60 text-sm">
-                                R$ {item.unitPrice.toFixed(2)}
-                              </span>
-                            </div>
-                            <div className="text-right">
-                              <span className="text-white font-bold">
-                                R$ {item.subtotal.toFixed(2)}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Observações da Venda */}
-                      {sale.notes && (
-                        <div className="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-                          <p className="text-yellow-400 text-sm">
-                            <AlertCircle className="h-4 w-4 inline mr-2" />
-                            <strong>Observações:</strong> {sale.notes}
-                          </p>
-                        </div>
-                      )}
-
-                                             {/* Ações do Garçom */}
-                       <div className="mt-4 flex justify-end space-x-2">
-                         {/* Garçom só pode marcar como Entregue quando estiver Pronto */}
-                         {orderStatus.status === 'ready' && (
-                           <Button
-                             onClick={() => updateOrderStatus(sale._id, 'delivered')}
-                             size="sm"
-                             className="bg-green-500 hover:bg-green-600"
-                           >
-                             <Truck className="h-4 w-4 mr-2" />
-                             Entregar
-                           </Button>
-                         )}
-                         
-                         {/* Status de produção são controlados pela cozinha, não pelo garçom */}
-                         {(orderStatus.status === 'pending' || orderStatus.status === 'preparing') && (
-                           <div className="text-sm text-white/60 italic">
-                             Aguardando produção...
-                           </div>
-                         )}
-                         
-                         <Button
-                           variant="outline"
-                           size="sm"
-                           className="border-white/20 text-white hover:bg-white/10"
-                         >
-                           <Eye className="h-4 w-4 mr-2" />
-                           Detalhes
-                         </Button>
-                       </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              );
-            } catch (error) {
-              console.error('Error rendering order:', error);
-              return (
-                <Card key={sale._id} className="glass-effect border-red-500/20">
-                  <CardContent className="p-4">
-                    <p className="text-red-400">Erro ao renderizar pedido: {error.message}</p>
-                  </CardContent>
-                </Card>
-              );
-            }
-          })
-        )}
-      </motion.div>
-
-      {/* Estatísticas Rápidas */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-                 className="grid grid-cols-1 md:grid-cols-2 gap-4"
-      >
-                 <Card className="glass-effect border-white/20">
-           <CardContent className="p-4">
-             <div className="flex items-center justify-between">
-               <div>
-                 <p className="text-white/60 text-sm">Aguardando Entrega</p>
-                 <p className="text-2xl font-bold text-blue-400">
-                   {filteredOrders.filter(sale => getOrderStatus(sale).status === 'ready').length}
-                 </p>
-               </div>
-               <Truck className="h-8 w-8 text-blue-400" />
-             </div>
-           </CardContent>
-         </Card>
-
-        <Card className="glass-effect border-white/20">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/60 text-sm">Prontos</p>
-                <p className="text-2xl font-bold text-blue-400">
-                  {filteredOrders.filter(sale => getOrderStatus(sale).status === 'ready').length}
-                </p>
-              </div>
-              <CheckCircle className="h-8 w-8 text-blue-400" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="glass-effect border-white/20">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/60 text-sm">Entregues</p>
-                <p className="text-2xl font-bold text-green-400">
-                  {filteredOrders.filter(sale => getOrderStatus(sale).status === 'delivered').length}
-                </p>
-              </div>
-              <Truck className="h-8 w-8 text-green-400" />
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

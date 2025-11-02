@@ -1,19 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { BarChart3, Calendar, Filter, Download, Package, TrendingUp, FileSpreadsheet, FileText } from 'lucide-react';
+import { BarChart3, Calendar, Filter, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
-import { useQuery } from "convex/react";
-import { api } from "../../convex/_generated/api";
-import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
 
 const Reports = () => {
+  const [sales, setSales] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [cashRegisterHistory, setCashRegisterHistory] = useState([]);
   const [dateFilter, setDateFilter] = useState({
     start: '',
     end: ''
@@ -24,16 +22,23 @@ const Reports = () => {
     cashRegister: []
   });
 
-  // Buscar dados do Convex
-  const sales = useQuery(api.sales.listAll) || [];
-  const products = useQuery(api.products.listActive) || [];
-  const cashRegisterHistory = useQuery(api.cashRegister.listAll) || [];
-
-  console.log('📊 Dados carregados:', { sales, products, cashRegisterHistory });
+  useEffect(() => {
+    loadData();
+  }, []);
 
   useEffect(() => {
     filterData();
-  }, [sales, products, cashRegisterHistory, dateFilter]);
+  }, [sales, dateFilter]);
+
+  const loadData = () => {
+    const salesData = JSON.parse(localStorage.getItem('sales') || '[]');
+    const productsData = JSON.parse(localStorage.getItem('products') || '[]');
+    const cashData = JSON.parse(localStorage.getItem('cashRegisterHistory') || '[]');
+    
+    setSales(salesData);
+    setProducts(productsData);
+    setCashRegisterHistory(cashData);
+  };
 
   const filterData = () => {
     let filtered = sales;
@@ -44,7 +49,7 @@ const Reports = () => {
       endDate.setHours(23, 59, 59, 999);
 
       filtered = sales.filter(sale => {
-        const saleDate = new Date(sale.saleDate);
+        const saleDate = new Date(sale.date);
         return saleDate >= startDate && saleDate <= endDate;
       });
     }
@@ -54,8 +59,26 @@ const Reports = () => {
       products: products,
       cashRegister: cashRegisterHistory
     });
+  };
 
-    console.log('🔍 Dados filtrados:', filteredData);
+  const getSalesByProduct = () => {
+    const productSales = {};
+    
+    filteredData.sales.forEach(sale => {
+      sale.items.forEach(item => {
+        if (!productSales[item.name]) {
+          productSales[item.name] = {
+            name: item.name,
+            quantity: 0,
+            revenue: 0
+          };
+        }
+        productSales[item.name].quantity += item.quantity;
+        productSales[item.name].revenue += item.price * item.quantity;
+      });
+    });
+
+    return Object.values(productSales).sort((a, b) => b.revenue - a.revenue);
   };
 
   const getSalesByPaymentMethod = () => {
@@ -67,30 +90,19 @@ const Reports = () => {
     };
 
     filteredData.sales.forEach(sale => {
-      const method = sale.paymentMethod;
-      if (paymentSales.hasOwnProperty(method)) {
-        paymentSales[method] += sale.total;
-      }
+      sale.paymentMethods.forEach(payment => {
+        paymentSales[payment.method] += payment.amount;
+      });
     });
 
     return paymentSales;
-  };
-
-  const getPaymentMethodLabel = (method) => {
-    const labels = {
-      money: 'Dinheiro',
-      credit: 'Cartão de Crédito',
-      debit: 'Cartão de Débito',
-      pix: 'PIX'
-    };
-    return labels[method] || method;
   };
 
   const getSalesByDay = () => {
     const dailySales = {};
 
     filteredData.sales.forEach(sale => {
-      const day = new Date(sale.saleDate).toDateString();
+      const day = new Date(sale.date).toDateString();
       if (!dailySales[day]) {
         dailySales[day] = {
           date: day,
@@ -105,195 +117,58 @@ const Reports = () => {
     return Object.values(dailySales).sort((a, b) => new Date(a.date) - new Date(b.date));
   };
 
-  const getTotalRevenue = () => {
-    return filteredData.sales.reduce((total, sale) => total + sale.total, 0);
+  const getSalesByOperator = () => {
+    const operatorSales = {};
+
+    filteredData.sales.forEach(sale => {
+      if (!operatorSales[sale.operator]) {
+        operatorSales[sale.operator] = {
+          name: sale.operator,
+          sales: 0,
+          revenue: 0
+        };
+      }
+      operatorSales[sale.operator].sales += 1;
+      operatorSales[sale.operator].revenue += sale.total;
+    });
+
+    return Object.values(operatorSales);
   };
 
-  const getTotalSales = () => {
-    return filteredData.sales.length;
-  };
-
-  const getAverageTicket = () => {
-    if (filteredData.sales.length === 0) return 0;
-    return getTotalRevenue() / getTotalSales();
-  };
-
-  /**
-   * Calcula margem de lucro estimada
-   * @returns {number} Margem de lucro estimada em porcentagem
-   */
-  const getEstimatedProfitMargin = () => {
-    // Estimativa baseada em produtos com preço de custo
-    const productsWithCost = products.filter(p => p.costPrice);
-    if (productsWithCost.length === 0) return 0;
-
-    const totalCost = productsWithCost.reduce((sum, p) => sum + (p.costPrice || 0), 0);
-    const totalRevenue = getTotalRevenue();
-    
-    if (totalRevenue === 0) return 0;
-    
-    return ((totalRevenue - totalCost) / totalRevenue) * 100;
-  };
-
-  /**
-   * Exporta dados para Excel
-   * @param {string} dataType - Tipo de dados a exportar
-   */
-  const exportToExcel = (dataType) => {
-    let data = [];
-    let filename = '';
-
-    switch (dataType) {
-      case 'sales':
-        data = filteredData.sales.map((sale, index) => ({
-          'Data': new Date(sale.saleDate).toLocaleDateString('pt-BR'),
-          'Número da Venda': `Venda #${index + 1}`,
-          'Total': sale.total,
-          'Forma de Pagamento': getPaymentMethodLabel(sale.paymentMethod),
-          'Tipo': sale.saleType
-        }));
-        filename = `vendas_${dateFilter.start || 'todas'}_${dateFilter.end || 'todas'}.xlsx`;
-        break;
-      case 'products':
-        data = filteredData.products.map(product => ({
-          'Produto': product.name,
-          'Categoria': product.categoryId,
-          'Preço': product.price,
-          'Status': product.isActive ? 'Ativo' : 'Inativo'
-        }));
-        filename = 'produtos.xlsx';
-        break;
-      default:
-        return;
-    }
-
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Relatório');
-    XLSX.writeFile(wb, filename);
-    
+  const exportReport = (reportType) => {
     toast({
-      title: "Exportação Excel realizada",
-      description: `Dados exportados para ${filename}`,
+      title: "🚧 Funcionalidade não implementada ainda",
+      description: "Mas não se preocupe! Você pode solicitar isso no seu próximo prompt! 🚀"
     });
   };
 
-  /**
-   * Exporta dados para PDF
-   * @param {string} dataType - Tipo de dados a exportar
-   */
-  const exportToPDF = (dataType) => {
-    const doc = new jsPDF();
-    let data = [];
-    let title = '';
-    let filename = '';
+  const productSales = getSalesByProduct();
+  const paymentMethodSales = getSalesByPaymentMethod();
+  const dailySales = getSalesByDay();
+  const operatorSales = getSalesByOperator();
 
-    switch (dataType) {
-      case 'sales':
-        data = filteredData.sales.map((sale, index) => [
-          new Date(sale.saleDate).toLocaleDateString('pt-BR'),
-          `Venda #${index + 1}`,
-          `R$ ${sale.total.toFixed(2)}`,
-          getPaymentMethodLabel(sale.paymentMethod),
-          sale.saleType
-        ]);
-        title = 'Relatório de Vendas';
-        filename = `vendas_${dateFilter.start || 'todas'}_${dateFilter.end || 'todas'}.pdf`;
-        break;
-      case 'products':
-        data = filteredData.products.map(product => [
-          product.name,
-          product.categoryId,
-          `R$ ${product.price.toFixed(2)}`,
-          product.isActive ? 'Ativo' : 'Inativo'
-        ]);
-        title = 'Relatório de Produtos';
-        filename = 'produtos.pdf';
-        break;
-      default:
-        return;
-    }
-
-    // Adicionar título
-    doc.setFontSize(18);
-    doc.text(title, 14, 22);
-    
-    // Adicionar data de geração
-    doc.setFontSize(10);
-    doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 14, 30);
-
-    // Adicionar tabela
-    const headers = dataType === 'sales' 
-      ? ['Data', 'Número da Venda', 'Total', 'Forma de Pagamento', 'Tipo']
-      : ['Produto', 'Categoria', 'Preço', 'Status'];
-    
-    doc.autoTable({
-      head: [headers],
-      body: data,
-      startY: 35,
-      theme: 'grid',
-      headStyles: { fillColor: [66, 139, 202] },
-      styles: { fontSize: 8 }
-    });
-
-    doc.save(filename);
-    
-    toast({
-      title: "Exportação PDF realizada",
-      description: `Dados exportados para ${filename}`,
-    });
-  };
-
-  /**
-   * Exporta dados para CSV
-   * @param {string} dataType - Tipo de dados a exportar
-   */
-  const exportToCSV = (dataType) => {
-    let csvContent = '';
-    let filename = '';
-
-    switch (dataType) {
-      case 'sales':
-        csvContent = 'Data,Número da Venda,Total,Forma Pagamento,Tipo\n';
-        filteredData.sales.forEach((sale, index) => {
-          csvContent += `${new Date(sale.saleDate).toLocaleDateString('pt-BR')},Venda #${index + 1},${sale.total},${sale.paymentMethod},${sale.saleType}\n`;
-        });
-        filename = `vendas_${dateFilter.start || 'todas'}_${dateFilter.end || 'todas'}.csv`;
-        break;
-      case 'products':
-        csvContent = 'Produto,Categoria,Preço,Status\n';
-        filteredData.products.forEach(product => {
-          csvContent += `${product.name},${product.categoryId},${product.price},${product.isActive ? 'Ativo' : 'Inativo'}\n`;
-        });
-        filename = 'produtos.csv';
-        break;
-      default:
-        return;
-    }
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    link.click();
-    
-    toast({
-      title: "Exportação CSV realizada",
-      description: `Dados exportados para ${filename}`,
-    });
-  };
+  const totalRevenue = filteredData.sales.reduce((sum, sale) => sum + sale.total, 0);
+  const totalSales = filteredData.sales.length;
 
   return (
     <div className="space-y-6">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
       >
-          <h1 className="text-2xl font-bold text-white mb-2">Relatórios e Analytics</h1>
-        <p className="text-white/70">Análise completa de vendas, produção e desempenho do negócio</p>
+        <div>
+          <h1 className="text-2xl font-bold text-white mb-2">Relatórios</h1>
+          <p className="text-white/70">Análise completa das vendas e operações</p>
+        </div>
+        
+        <Button onClick={() => exportReport('general')} className="btn-gradient">
+          <Download className="h-4 w-4 mr-2" />
+          Exportar
+        </Button>
       </motion.div>
 
-      {/* Filtros de Data */}
+      {/* Date Filter */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -329,268 +204,202 @@ const Reports = () => {
                 />
               </div>
             </div>
-            <div className="mt-4 flex justify-end">
-              <Button 
-                onClick={() => setDateFilter({ start: '', end: '' })} 
-                variant="outline" 
-                size="sm"
-                className="border-white/20 text-white hover:bg-white/10"
-              >
-                <Filter className="h-4 w-4 mr-2" />
-                Limpar Filtros
-              </Button>
-            </div>
           </CardContent>
         </Card>
       </motion.div>
 
-      {/* Cards de Resumo */}
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {[
+          { title: 'Total de Vendas', value: totalSales, color: 'text-blue-400' },
+          { title: 'Faturamento', value: `R$ ${totalRevenue.toFixed(2)}`, color: 'text-green-400' },
+          { title: 'Ticket Médio', value: `R$ ${totalSales > 0 ? (totalRevenue / totalSales).toFixed(2) : '0.00'}`, color: 'text-purple-400' },
+          { title: 'Produtos Ativos', value: products.length, color: 'text-orange-400' }
+        ].map((stat, index) => (
           <motion.div
+            key={stat.title}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="grid grid-cols-1 md:grid-cols-4 gap-4"
+            transition={{ delay: 0.2 + index * 0.1 }}
           >
             <Card className="glass-effect border-white/20">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/60 text-sm">Total de Vendas</p>
-                <p className="text-2xl font-bold text-white">{getTotalSales()}</p>
-              </div>
-              <BarChart3 className="h-8 w-8 text-blue-400" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="glass-effect border-white/20">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/60 text-sm">Receita Total</p>
-                <p className="text-2xl font-bold text-green-400">R$ {getTotalRevenue().toFixed(2)}</p>
-              </div>
-              <BarChart3 className="h-8 w-8 text-green-400" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="glass-effect border-white/20">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/60 text-sm">Ticket Médio</p>
-                <p className="text-2xl font-bold text-yellow-400">R$ {getAverageTicket().toFixed(2)}</p>
-              </div>
-              <BarChart3 className="h-8 w-8 text-yellow-400" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="glass-effect border-white/20">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/60 text-sm">Produtos Ativos</p>
-                <p className="text-2xl font-bold text-purple-400">{products.length}</p>
-              </div>
-              <Package className="h-8 w-8 text-purple-400" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="glass-effect border-white/20">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-white/60 text-sm">Margem Estimada</p>
-                <p className="text-2xl font-bold text-green-400">{getEstimatedProfitMargin().toFixed(1)}%</p>
-              </div>
-              <TrendingUp className="h-8 w-8 text-green-400" />
-            </div>
-          </CardContent>
-        </Card>
+              <CardContent className="p-4 text-center">
+                <p className="text-white/70 text-sm">{stat.title}</p>
+                <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
+              </CardContent>
+            </Card>
           </motion.div>
+        ))}
+      </div>
 
-      {/* Abas de Relatórios */}
+      {/* Reports Tabs */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
+        transition={{ delay: 0.6 }}
       >
-        <Tabs defaultValue="payment-methods" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 bg-white/10 border-white/20">
-            <TabsTrigger value="payment-methods" className="text-white data-[state=active]:bg-white/20">
-              Formas de Pagamento
-            </TabsTrigger>
-            <TabsTrigger value="daily-sales" className="text-white data-[state=active]:bg-white/20">
-              Vendas Diárias
-            </TabsTrigger>
-            <TabsTrigger value="products" className="text-white data-[state=active]:bg-white/20">
-              Produtos
-            </TabsTrigger>
-            <TabsTrigger value="cash-register" className="text-white data-[state=active]:bg-white/20">
-              Caixa
-            </TabsTrigger>
+        <Tabs defaultValue="products" className="space-y-4">
+          <TabsList className="grid w-full grid-cols-5 bg-white/10">
+            <TabsTrigger value="products" className="text-white">Produtos</TabsTrigger>
+            <TabsTrigger value="payment" className="text-white">Pagamentos</TabsTrigger>
+            <TabsTrigger value="daily" className="text-white">Diário</TabsTrigger>
+            <TabsTrigger value="operators" className="text-white">Operadores</TabsTrigger>
+            <TabsTrigger value="cash" className="text-white">Caixa</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="payment-methods" className="mt-6">
+          <TabsContent value="products">
             <Card className="glass-effect border-white/20">
               <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-white">Vendas por Forma de Pagamento</CardTitle>
-                  <div className="flex space-x-2">
-                    <Button 
-                      onClick={() => exportToCSV('sales')} 
-                      variant="outline" 
-                      size="sm"
-                      className="border-white/20 text-white hover:bg-white/10"
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      CSV
-                    </Button>
-                    <Button 
-                      onClick={() => exportToExcel('sales')} 
-                      variant="outline" 
-                      size="sm"
-                      className="border-white/20 text-white hover:bg-white/10"
-                    >
-                      <FileSpreadsheet className="h-4 w-4 mr-2" />
-                      Excel
-                    </Button>
-                    <Button 
-                      onClick={() => exportToPDF('sales')} 
-                      variant="outline" 
-                      size="sm"
-                      className="border-white/20 text-white hover:bg-white/10"
-                    >
-                      <FileText className="h-4 w-4 mr-2" />
-                      PDF
-                    </Button>
-                  </div>
-                </div>
+                <CardTitle className="text-white">Vendas por Produto</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {Object.entries(getSalesByPaymentMethod()).map(([method, amount]) => (
-                    <div key={method} className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
-                      <span className="text-white">{getPaymentMethodLabel(method)}</span>
-                      <span className="text-green-400 font-bold">R$ {amount.toFixed(2)}</span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="daily-sales" className="mt-6">
-            <Card className="glass-effect border-white/20">
-              <CardHeader>
-                <CardTitle className="text-white">Vendas por Dia</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {getSalesByDay().map((day) => (
-                    <div key={day.date} className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
-                      <span className="text-white">{new Date(day.date).toLocaleDateString('pt-BR')}</span>
-                      <div className="text-right">
-                        <p className="text-white">{day.sales} vendas</p>
-                        <p className="text-green-400 font-bold">R$ {day.revenue.toFixed(2)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="products" className="mt-6">
-            <Card className="glass-effect border-white/20">
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-white">Relatório de Produtos</CardTitle>
-                  <div className="flex space-x-2">
-                    <Button 
-                      onClick={() => exportToCSV('products')} 
-                      variant="outline" 
-                      size="sm"
-                      className="border-white/20 text-white hover:bg-white/10"
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      CSV
-                    </Button>
-                    <Button 
-                      onClick={() => exportToExcel('products')} 
-                      variant="outline" 
-                      size="sm"
-                      className="border-white/20 text-white hover:bg-white/10"
-                    >
-                      <FileSpreadsheet className="h-4 w-4 mr-2" />
-                      Excel
-                    </Button>
-                    <Button 
-                      onClick={() => exportToPDF('products')} 
-                      variant="outline" 
-                      size="sm"
-                      className="border-white/20 text-white hover:bg-white/10"
-                    >
-                      <FileText className="h-4 w-4 mr-2" />
-                      PDF
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {filteredData.products.map((product) => (
-                    <div key={product._id} className="flex items-center justify-between p-3 bg-white/5 rounded-lg">
+                <div className="space-y-3">
+                  {productSales.map((product, index) => (
+                    <div key={product.name} className="flex justify-between items-center p-3 rounded-lg bg-white/5">
                       <div>
-                        <span className="text-white font-medium">{product.name}</span>
-                        <p className="text-sm text-white/60">Categoria: {product.categoryId}</p>
+                        <p className="text-white font-medium">{product.name}</p>
+                        <p className="text-white/60 text-sm">{product.quantity} unidades vendidas</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-white font-bold">R$ {product.price.toFixed(2)}</p>
-                        <span className={`text-xs px-2 py-1 rounded-full ${
-                          product.isActive ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-                        }`}>
-                          {product.isActive ? 'Ativo' : 'Inativo'}
-                        </span>
+                        <p className="text-green-400 font-bold">R$ {product.revenue.toFixed(2)}</p>
+                        <p className="text-white/60 text-sm">#{index + 1} em vendas</p>
                       </div>
                     </div>
                   ))}
+                  {productSales.length === 0 && (
+                    <p className="text-white/60 text-center py-8">Nenhuma venda encontrada no período</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="cash-register" className="mt-6">
+          <TabsContent value="payment">
             <Card className="glass-effect border-white/20">
               <CardHeader>
-                <CardTitle className="text-white">Histórico de Caixa</CardTitle>
+                <CardTitle className="text-white">Vendas por Forma de Pagamento</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {filteredData.cashRegister.length === 0 ? (
-                    <p className="text-white/60 text-center py-8">Nenhum registro de caixa encontrado</p>
-                  ) : (
-                    filteredData.cashRegister.map((record) => (
-                      <div key={record._id} className="p-3 bg-white/5 rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-white font-medium">
-                            {new Date(record.closeDate).toLocaleDateString('pt-BR')}
-                          </span>
-                          <span className="text-green-400 font-bold">
-                            R$ {record.totalCount.toFixed(2)}
-                          </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {Object.entries(paymentMethodSales).map(([method, amount]) => {
+                    const methodNames = {
+                      money: 'Dinheiro',
+                      credit: 'Cartão de Crédito',
+                      debit: 'Cartão de Débito',
+                      pix: 'PIX'
+                    };
+                    
+                    return (
+                      <div key={method} className="p-4 rounded-lg bg-white/5 text-center">
+                        <p className="text-white/70 text-sm">{methodNames[method]}</p>
+                        <p className="text-2xl font-bold text-green-400">R$ {amount.toFixed(2)}</p>
+                        <p className="text-white/60 text-sm">
+                          {totalRevenue > 0 ? ((amount / totalRevenue) * 100).toFixed(1) : 0}% do total
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="daily">
+            <Card className="glass-effect border-white/20">
+              <CardHeader>
+                <CardTitle className="text-white">Vendas Diárias</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {dailySales.map((day) => (
+                    <div key={day.date} className="flex justify-between items-center p-3 rounded-lg bg-white/5">
+                      <div>
+                        <p className="text-white font-medium">
+                          {new Date(day.date).toLocaleDateString('pt-BR')}
+                        </p>
+                        <p className="text-white/60 text-sm">{day.sales} vendas</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-green-400 font-bold">R$ {day.revenue.toFixed(2)}</p>
+                        <p className="text-white/60 text-sm">
+                          Ticket: R$ {day.sales > 0 ? (day.revenue / day.sales).toFixed(2) : '0.00'}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  {dailySales.length === 0 && (
+                    <p className="text-white/60 text-center py-8">Nenhuma venda encontrada no período</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="operators">
+            <Card className="glass-effect border-white/20">
+              <CardHeader>
+                <CardTitle className="text-white">Vendas por Operador</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {operatorSales.map((operator) => (
+                    <div key={operator.name} className="flex justify-between items-center p-3 rounded-lg bg-white/5">
+                      <div>
+                        <p className="text-white font-medium">{operator.name}</p>
+                        <p className="text-white/60 text-sm">{operator.sales} vendas realizadas</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-green-400 font-bold">R$ {operator.revenue.toFixed(2)}</p>
+                        <p className="text-white/60 text-sm">
+                          Ticket: R$ {operator.sales > 0 ? (operator.revenue / operator.sales).toFixed(2) : '0.00'}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                  {operatorSales.length === 0 && (
+                    <p className="text-white/60 text-center py-8">Nenhuma venda encontrada no período</p>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="cash">
+            <Card className="glass-effect border-white/20">
+              <CardHeader>
+                <CardTitle className="text-white">Histórico de Fechamentos</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {cashRegisterHistory.map((close) => (
+                    <div key={close.id} className="p-4 rounded-lg bg-white/5 border border-white/10">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <p className="text-white font-medium">
+                            {new Date(close.date).toLocaleDateString('pt-BR')}
+                          </p>
+                          <p className="text-white/60 text-sm">
+                            {new Date(close.date).toLocaleTimeString('pt-BR')}
+                          </p>
                         </div>
-                        <div className="grid grid-cols-2 gap-2 text-sm text-white/60">
-                          <span>Dinheiro: R$ {record.moneyCount.toFixed(2)}</span>
-                          <span>Crédito: R$ {record.creditCount.toFixed(2)}</span>
-                          <span>Débito: R$ {record.debitCount.toFixed(2)}</span>
-                          <span>PIX: R$ {record.pixCount.toFixed(2)}</span>
+                        <div className="text-right">
+                          <p className="text-green-400 font-bold">
+                            R$ {close.totalSales.toFixed(2)}
+                          </p>
+                          <p className={`text-sm ${
+                            close.differences.total >= 0 ? 'text-green-400' : 'text-red-400'
+                          }`}>
+                            {close.differences.total >= 0 ? '+' : ''}R$ {close.differences.total.toFixed(2)}
+                          </p>
                         </div>
                       </div>
-                    ))
+                      <p className="text-white/60 text-sm">
+                        Operador: {close.operator}
+                      </p>
+                    </div>
+                  ))}
+                  {cashRegisterHistory.length === 0 && (
+                    <p className="text-white/60 text-center py-8">Nenhum fechamento de caixa registrado</p>
                   )}
                 </div>
               </CardContent>
@@ -598,8 +407,6 @@ const Reports = () => {
           </TabsContent>
         </Tabs>
       </motion.div>
-
-
     </div>
   );
 };

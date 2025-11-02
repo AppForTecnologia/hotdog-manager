@@ -9,8 +9,6 @@ import {
   Clock,
   Users
 } from 'lucide-react';
-import { useQuery } from "convex/react";
-import { api } from "../../convex/_generated/api";
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
@@ -19,108 +17,72 @@ const Dashboard = () => {
     totalProducts: 0,
     averageTicket: 0,
     openOrders: 0,
-    activeOperators: 0,
-    salesChange: 0,
-    ordersChange: 0
+    activeOperators: 1
   });
 
-  // Buscar dados do Convex
-  const sales = useQuery(api.sales.listAll) || [];
-  const products = useQuery(api.products.listActive) || [];
-  const users = useQuery(api.users.listActive) || [];
-
   useEffect(() => {
-    if (sales && products && users) {
-      // Calcular estatísticas reais
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      // Vendas de hoje (apenas pagas)
-      const todaySales = sales.filter(sale => {
-        const saleDate = new Date(sale.saleDate);
-        return saleDate >= today && sale.status === 'paga';
-      });
-      
-      // Vendas de ontem para comparação
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-      
-      const yesterdaySales = sales.filter(sale => {
-        const saleDate = new Date(sale.saleDate);
-        return saleDate >= yesterday && saleDate < today && sale.status === 'paga';
-      });
-      
-      const totalRevenue = todaySales.reduce((sum, sale) => sum + sale.total, 0);
-      const yesterdayRevenue = yesterdaySales.reduce((sum, sale) => sum + sale.total, 0);
-      const avgTicket = todaySales.length > 0 ? totalRevenue / todaySales.length : 0;
-      
-      const openOrders = sales.filter(sale => sale.status === 'pendente').length;
-      
-      // Calcular variação percentual
-      const salesChange = yesterdayRevenue > 0 ? ((totalRevenue - yesterdayRevenue) / yesterdayRevenue * 100) : 0;
-      const ordersChange = yesterdaySales.length > 0 ? ((todaySales.length - yesterdaySales.length) / yesterdaySales.length * 100) : 0;
-      
-      setStats({
-        todaySales: totalRevenue,
-        todayOrders: todaySales.length,
-        totalProducts: products.length,
-        averageTicket: avgTicket,
-        openOrders: openOrders,
-        activeOperators: users.length,
-        salesChange: salesChange,
-        ordersChange: ordersChange
-      });
-    }
-  }, [sales, products, users]);
+    // Load stats from localStorage
+    const sales = JSON.parse(localStorage.getItem('sales') || '[]');
+    const products = JSON.parse(localStorage.getItem('products') || '[]');
+    const orders = JSON.parse(localStorage.getItem('orders') || '[]');
+    
+    const today = new Date().toDateString();
+    const todaySales = sales.filter(sale => new Date(sale.date).toDateString() === today);
+    const todayRevenue = todaySales.reduce((sum, sale) => sum + sale.total, 0);
+    const openOrders = orders.filter(order => order.status === 'pending').length;
+    
+    setStats({
+      todaySales: todayRevenue,
+      todayOrders: todaySales.length,
+      totalProducts: products.length,
+      averageTicket: todaySales.length > 0 ? todayRevenue / todaySales.length : 0,
+      openOrders,
+      activeOperators: 1
+    });
+  }, []);
 
   const statCards = [
     {
       title: 'Vendas Hoje',
       value: `R$ ${stats.todaySales.toFixed(2)}`,
       icon: DollarSign,
-      color: 'from-emerald-500 to-green-600',
-      change: `${stats.salesChange >= 0 ? '+' : ''}${stats.salesChange.toFixed(1)}%`,
-      changeColor: stats.salesChange >= 0 ? 'text-green-400' : 'text-red-400'
+      color: 'from-green-500 to-emerald-600',
+      change: '+12%'
     },
     {
       title: 'Pedidos Hoje',
       value: stats.todayOrders,
       icon: ShoppingCart,
       color: 'from-blue-500 to-cyan-600',
-      change: `${stats.ordersChange >= 0 ? '+' : ''}${stats.ordersChange.toFixed(1)}%`,
-      changeColor: stats.ordersChange >= 0 ? 'text-green-400' : 'text-red-400'
+      change: '+8%'
     },
     {
       title: 'Produtos Cadastrados',
       value: stats.totalProducts,
       icon: Package,
-      color: 'from-slate-500 to-gray-600',
-      change: 'Total',
-      changeColor: 'text-blue-400'
+      color: 'from-purple-500 to-violet-600',
+      change: '+2%'
     },
     {
       title: 'Ticket Médio',
       value: `R$ ${stats.averageTicket.toFixed(2)}`,
       icon: TrendingUp,
-      color: 'from-orange-500 to-amber-600',
-      change: 'Média',
-      changeColor: 'text-orange-400'
+      color: 'from-orange-500 to-red-600',
+      change: '+5%'
     },
     {
       title: 'Pedidos Abertos',
       value: stats.openOrders,
       icon: Clock,
-      color: 'from-yellow-500 to-orange-600',
-      change: 'Pendentes',
-      changeColor: 'text-yellow-400'
+      color: 'from-yellow-500 to-amber-600',
+      change: '-3%'
     },
     {
       title: 'Operadores Ativos',
       value: stats.activeOperators,
       icon: Users,
-      color: 'from-indigo-500 to-blue-600',
-      change: 'Online',
-      changeColor: 'text-indigo-400'
+      color: 'from-pink-500 to-rose-600',
+      change: '0%'
     }
   ];
 
@@ -160,8 +122,8 @@ const Dashboard = () => {
                 <div className="text-2xl font-bold text-white mb-1">
                   {stat.value}
                 </div>
-                <p className={`text-xs ${stat.changeColor}`}>
-                  {stat.change}
+                <p className="text-xs text-green-400">
+                  {stat.change} em relação a ontem
                 </p>
               </CardContent>
             </Card>
@@ -181,34 +143,18 @@ const Dashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {sales.length > 0 ? (
-                  sales
-                    .filter(sale => sale.status === 'paga')
-                    .slice(0, 5)
-                    .map((sale, index) => (
-                      <div key={sale._id} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-                        <div>
-                          <p className="text-white font-medium">
-                            {sale.notes ? sale.notes : `Venda #${sale._id.slice(-6)}`}
-                          </p>
-                          <p className="text-white/60 text-sm">
-                            {new Date(sale.saleDate).toLocaleTimeString('pt-BR', {
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            })}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-white font-bold">R$ {sale.total.toFixed(2)}</p>
-                          <p className="text-green-400 text-sm capitalize">{sale.paymentMethod}</p>
-                        </div>
-                      </div>
-                    ))
-                ) : (
-                  <div className="text-center py-8 text-white/60">
-                    <p>Nenhuma venda encontrada</p>
+                {[1, 2, 3].map((item) => (
+                  <div key={item} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+                    <div>
+                      <p className="text-white font-medium">Comanda #{item.toString().padStart(3, '0')}</p>
+                      <p className="text-white/60 text-sm">Mesa {item}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-white font-bold">R$ {(15.50 * item).toFixed(2)}</p>
+                      <p className="text-green-400 text-sm">Pago</p>
+                    </div>
                   </div>
-                )}
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -225,25 +171,27 @@ const Dashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {products.length > 0 ? (
-                  products
-                    .slice(0, 5)
-                    .map((product, index) => (
-                      <div key={product._id} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
-                        <div>
-                          <p className="text-white font-medium">{product.name}</p>
-                          <p className="text-white/60 text-sm">#{index + 1} em estoque</p>
-                        </div>
-                        <div className="text-right">
-
-                        </div>
+                {[
+                  { name: 'Hot Dog Tradicional', sales: 25 },
+                  { name: 'Hot Dog Especial', sales: 18 },
+                  { name: 'Refrigerante', sales: 32 }
+                ].map((product, index) => (
+                  <div key={product.name} className="flex items-center justify-between p-3 rounded-lg bg-white/5">
+                    <div>
+                      <p className="text-white font-medium">{product.name}</p>
+                      <p className="text-white/60 text-sm">#{index + 1} mais vendido</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-white font-bold">{product.sales} vendas</p>
+                      <div className="w-20 h-2 bg-white/20 rounded-full mt-1">
+                        <div 
+                          className="h-full bg-gradient-to-r from-blue-500 to-purple-600 rounded-full"
+                          style={{ width: `${(product.sales / 32) * 100}%` }}
+                        />
                       </div>
-                    ))
-                ) : (
-                  <div className="text-center py-8 text-white/60">
-                    <p>Nenhum produto cadastrado</p>
+                    </div>
                   </div>
-                )}
+                ))}
               </div>
             </CardContent>
           </Card>

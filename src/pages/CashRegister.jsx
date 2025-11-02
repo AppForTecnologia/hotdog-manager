@@ -6,13 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/components/ui/use-toast';
-import { useQuery, useMutation } from "convex/react";
-import { useUser } from "@clerk/clerk-react";
-import { api } from "../../convex/_generated/api";
 
 const CashRegister = () => {
-  const { user } = useUser();
-  
+  const [todaySales, setTodaySales] = useState([]);
   const [cashCounts, setCashCounts] = useState({
     money: '',
     credit: '',
@@ -34,38 +30,24 @@ const CashRegister = () => {
     total: 0
   });
 
-  // Buscar dados do Convex
-  const sales = useQuery(api.sales.listAll) || [];
-  const cashRegisterHistory = useQuery(api.cashRegister.listAll) || [];
-  const createCashRegisterClose = useMutation(api.cashRegister.create);
-  
-  // Buscar métodos de pagamento das vendas do dia
-  const today = new Date();
-  const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59).getTime();
-  
-  const dailyPaymentMethods = useQuery(api.sales.getDailyPaymentMethods, { 
-    startDate: startOfDay, 
-    endDate: endOfDay 
-  }) || [];
-  
-  // Buscar usuário do Convex
-  const currentUser = useQuery(api.users.getByClerkId, user ? { clerkId: user.id } : "skip");
-
-  // Calcular vendas pagas de hoje
-  const todaySales = sales.filter(sale => {
-    const today = new Date().toDateString();
-    const saleDate = new Date(sale.saleDate).toDateString();
-    // Filtrar apenas vendas pagas do dia atual
-    return saleDate === today && sale.status === "paga";
-  });
+  useEffect(() => {
+    loadTodaySales();
+  }, []);
 
   useEffect(() => {
-    console.log("Calculando resumo de vendas...");
-    console.log("Vendas de hoje (pagas):", todaySales);
-    console.log("Métodos de pagamento do dia:", dailyPaymentMethods);
-    
-    // Calcular resumo de vendas por método de pagamento
+    calculateDifferences();
+  }, [cashCounts, salesSummary]);
+
+  const loadTodaySales = () => {
+    const sales = JSON.parse(localStorage.getItem('sales') || '[]');
+    const today = new Date().toDateString();
+    const todaysSales = sales.filter(sale => 
+      new Date(sale.date).toDateString() === today
+    );
+
+    setTodaySales(todaysSales);
+
+    // Calculate sales summary by payment method
     const summary = {
       money: 0,
       credit: 0,
@@ -74,29 +56,15 @@ const CashRegister = () => {
       total: 0
     };
 
-    // Usar os métodos de pagamento reais da tabela paymentMethods
-    dailyPaymentMethods.forEach(payment => {
-      console.log(`Processando pagamento: ${payment.method} - R$ ${payment.amount}`);
-      
-      if (summary.hasOwnProperty(payment.method)) {
+    todaysSales.forEach(sale => {
+      sale.paymentMethods.forEach(payment => {
         summary[payment.method] += payment.amount;
         summary.total += payment.amount;
-        console.log(`- Adicionado R$ ${payment.amount} ao método ${payment.method}`);
-      } else {
-        console.warn(`Método de pagamento desconhecido: "${payment.method}"`, payment);
-        // Adicionar ao total mesmo se o método não for reconhecido
-        summary.total += payment.amount;
-        console.log(`- Adicionado R$ ${payment.amount} ao total (método desconhecido)`);
-      }
+      });
     });
 
-    console.log("Resumo final calculado:", summary);
     setSalesSummary(summary);
-  }, [todaySales, dailyPaymentMethods]);
-
-  useEffect(() => {
-    calculateDifferences();
-  }, [cashCounts, salesSummary]);
+  };
 
   const calculateDifferences = () => {
     const newDifferences = {
@@ -121,7 +89,7 @@ const CashRegister = () => {
     });
   };
 
-  const saveCashRegisterClose = async () => {
+  const saveCashRegisterClose = () => {
     const totalCounted = Object.values(cashCounts).reduce((sum, value) => 
       sum + (parseFloat(value) || 0), 0
     );
@@ -135,59 +103,38 @@ const CashRegister = () => {
       return;
     }
 
-    if (!currentUser || !user) {
-      toast({
-        title: "Erro",
-        description: "Usuário não encontrado. Faça login novamente.",
-        variant: "destructive"
-      });
-      return;
-    }
-
     const closeData = {
-      userId: currentUser._id,
-      clerkUserId: user.id,
-      moneyCount: parseFloat(cashCounts.money) || 0,
-      creditCount: parseFloat(cashCounts.credit) || 0,
-      debitCount: parseFloat(cashCounts.debit) || 0,
-      pixCount: parseFloat(cashCounts.pix) || 0,
-      totalCount: totalCounted,
-      moneySales: salesSummary.money,
-      creditSales: salesSummary.credit,
-      debitSales: salesSummary.debit,
-      pixSales: salesSummary.pix,
+      id: Date.now(),
+      date: new Date().toISOString(),
+      salesSummary,
+      cashCounts: {
+        money: parseFloat(cashCounts.money) || 0,
+        credit: parseFloat(cashCounts.credit) || 0,
+        debit: parseFloat(cashCounts.debit) || 0,
+        pix: parseFloat(cashCounts.pix) || 0
+      },
+      differences,
       totalSales: salesSummary.total,
-      moneyDiff: differences.money,
-      creditDiff: differences.credit,
-      debitDiff: differences.debit,
-      pixDiff: differences.pix,
-      totalDiff: differences.total,
-      notes: `Fechamento de caixa - ${new Date().toLocaleString()}`
+      totalCounted: totalCounted,
+      operator: 'Operador 1'
     };
 
-    try {
-      await createCashRegisterClose(closeData);
-      
-      toast({
-        title: "Caixa fechado com sucesso!",
-        description: `Total contado: R$ ${totalCounted.toFixed(2)} | Total vendas: R$ ${salesSummary.total.toFixed(2)}`,
-      });
+    const cashRegisterHistory = JSON.parse(localStorage.getItem('cashRegisterHistory') || '[]');
+    cashRegisterHistory.push(closeData);
+    localStorage.setItem('cashRegisterHistory', JSON.stringify(cashRegisterHistory));
 
-      // Limpar campos
-      setCashCounts({
-        money: '',
-        credit: '',
-        debit: '',
-        pix: ''
-      });
-    } catch (error) {
-      console.error('Erro ao fechar caixa:', error);
-      toast({
-        title: "Erro",
-        description: "Erro ao fechar o caixa. Tente novamente.",
-        variant: "destructive"
-      });
-    }
+    toast({
+      title: "Caixa fechado!",
+      description: `Fechamento realizado com ${differences.total >= 0 ? 'sobra' : 'falta'} de R$ ${Math.abs(differences.total).toFixed(2)}.`
+    });
+
+    // Reset form
+    setCashCounts({
+      money: '',
+      credit: '',
+      debit: '',
+      pix: ''
+    });
   };
 
   const paymentMethods = [
@@ -362,7 +309,7 @@ const CashRegister = () => {
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
               <div className="p-4 rounded-lg bg-white/5">
-                <p className="text-white/70 text-sm">Total de Vendas (Pagas)</p>
+                <p className="text-white/70 text-sm">Total de Vendas</p>
                 <p className="text-2xl font-bold text-green-400">{todaySales.length}</p>
               </div>
               <div className="p-4 rounded-lg bg-white/5">
@@ -371,7 +318,7 @@ const CashRegister = () => {
               </div>
               <div className="p-4 rounded-lg bg-white/5">
                 <p className="text-white/70 text-sm">Ticket Médio</p>
-                <p className="text-2xl font-bold text-slate-400">
+                <p className="text-2xl font-bold text-purple-400">
                   R$ {todaySales.length > 0 ? (salesSummary.total / todaySales.length).toFixed(2) : '0.00'}
                 </p>
               </div>
