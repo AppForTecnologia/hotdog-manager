@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Plus, Minus, ShoppingCart, Trash2, GlassWater, Search, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,7 @@ import { toast } from '@/components/ui/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const Sales = () => {
+  const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [clients, setClients] = useState([]);
@@ -180,7 +182,7 @@ const Sales = () => {
                   <div className="mt-2 max-h-32 overflow-y-auto space-y-1">
                     {clientSearch && filteredClients.map(c => <div key={c.id} className="p-2 rounded hover:bg-accent cursor-pointer" onClick={() => { setSelectedClient(c); setClientSearch(''); }}><p>{c.name}</p><p className="text-xs text-muted-foreground">{c.phone}</p></div>)}
                   </div>
-                  {clients.length === 0 && <Button variant="outline" className="w-full mt-2" onClick={() => toast({ title: "Navegue para Clientes", description: "Cadastre um cliente na tela de Clientes." })}><UserPlus className="h-4 w-4 mr-2" />Cadastrar Cliente</Button>}
+                  {clients.length === 0 && <Button variant="outline" className="w-full mt-2" onClick={() => navigate('/clients')}><UserPlus className="h-4 w-4 mr-2" />Cadastrar Cliente</Button>}
                 </div>}
               </div>}
               <div className="space-y-3 max-h-60 overflow-y-auto scrollbar-hide">
