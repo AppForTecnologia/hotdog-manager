@@ -239,7 +239,7 @@ const Payment = () => {
           ))}
         </div>
         {orders.length === 0 && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-12">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-12 flex flex-col items-center justify-center">
             <div className="text-6xl mb-4">💳</div>
             <h3 className="text-xl font-semibold text-foreground mb-2">Nenhum pedido pendente</h3>
             <p className="text-muted-foreground">Todos os pedidos foram pagos ou não há pedidos criados.</p>
