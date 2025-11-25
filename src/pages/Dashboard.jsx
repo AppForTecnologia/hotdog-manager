@@ -29,7 +29,7 @@ const Dashboard = () => {
     const today = new Date().toDateString();
     const todaySales = sales.filter(sale => new Date(sale.date).toDateString() === today);
     const todayRevenue = todaySales.reduce((sum, sale) => sum + sale.total, 0);
-    const openOrders = orders.filter(order => order.status === 'pending').length;
+    const openOrders = orders.filter(order => order.status === 'Pendente').length;
     
     setStats({
       todaySales: todayRevenue,

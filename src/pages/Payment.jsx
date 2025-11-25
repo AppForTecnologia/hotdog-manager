@@ -32,7 +32,7 @@ const Payment = () => {
   useEffect(() => {
     const fetchOrders = () => {
       const savedOrders = JSON.parse(localStorage.getItem('orders') || '[]');
-      setOrders(savedOrders.filter(order => order.status === 'pending'));
+      setOrders(savedOrders.filter(order => order.status === 'Pendente'));
     };
     fetchOrders();
     const interval = setInterval(fetchOrders, 2000); // Poll for new orders
@@ -45,20 +45,20 @@ const Payment = () => {
       const updatedOrder = newOrders.find(o => o.id === order.id);
       return updatedOrder || order;
     }).filter(order => {
-      const isStillPending = newOrders.some(o => o.id === order.id && o.status === 'pending');
+      const isStillPending = newOrders.some(o => o.id === order.id && o.status === 'Pendente');
       const wasNotPending = !orders.some(o => o.id === order.id);
-      return isStillPending || (wasNotPending && order.status !== 'pending');
+      return isStillPending || (wasNotPending && order.status !== 'Pendente');
     });
 
-    const finalOrders = [...newOrders.filter(o => o.status === 'pending')];
+    const finalOrders = [...newOrders.filter(o => o.status === 'Pendente')];
     allOrders.forEach(oldOrder => {
-      if (oldOrder.status !== 'pending' && !finalOrders.some(o => o.id === oldOrder.id)) {
+      if (oldOrder.status !== 'Pendente' && !finalOrders.some(o => o.id === oldOrder.id)) {
         finalOrders.push(oldOrder);
       }
     });
 
     localStorage.setItem('orders', JSON.stringify(finalOrders));
-    setOrders(newOrders.filter(o => o.status === 'pending'));
+    setOrders(newOrders.filter(o => o.status === 'Pendente'));
   };
 
   const saveSale = (saleData) => {

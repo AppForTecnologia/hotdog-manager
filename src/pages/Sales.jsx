@@ -313,10 +313,10 @@ const Sales = () => {
       deliveryAddress: orderType === 'Delivery' ? selectedClient.address : null,
       items: currentOrder,
       total: getTotalOrder(),
-      status: 'pending',
+      status: 'Pendente',
       createdAt: new Date().toISOString(),
       operator: 'Operador 1',
-      paymentStatus: orderType === 'Delivery' && deliveryPaymentOption === 'paid' ? 'paid' : 'pending',
+      paymentStatus: orderType === 'Delivery' && deliveryPaymentOption === 'paid' ? 'paid' : 'Pendente',
       paymentOption: orderType === 'Delivery' ? deliveryPaymentOption : null
     };
 

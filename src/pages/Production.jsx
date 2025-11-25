@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Search, Hourglass, UtensilsCrossed, Bell, CheckCircle2, ChefHat } from 'lucide-react';
+import { Search, Hourglass, UtensilsCrossed, Bell, CheckCircle2, ChefHat, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/components/ui/use-toast';
@@ -11,21 +11,33 @@ const statusConfig = {
   Pendente: { icon: Hourglass, color: "bg-red-500/20 text-red-400 border-red-500/30", bgColor: "bg-red-500" },
   'Em Produção': { icon: UtensilsCrossed, color: "bg-orange-500/20 text-orange-400 border-orange-500/30", bgColor: "bg-orange-500" },
   Concluído: { icon: Bell, color: "bg-blue-500/20 text-blue-400 border-blue-500/30", bgColor: "bg-blue-500" },
+  'c/Entregador': { icon: Truck, color: "bg-purple-500/20 text-purple-400 border-purple-500/30", bgColor: "bg-purple-500" },
   Entregue: { icon: CheckCircle2, color: "bg-green-500/20 text-green-400 border-green-500/30", bgColor: "bg-green-500" }
 };
 
 const statusTransitions = {
   Pendente: ['Em Produção'],
   'Em Produção': ['Concluído'],
-  Concluído: ['Entregue'],
+  Concluído: ['Entregue', 'c/Entregador'], // Pode ir para Entregue (Local) ou c/Entregador (Delivery)
+  'c/Entregador': [], // Não pode mudar status na produção, apenas entregador pode
   Entregue: []
 };
 
-const ProductionItem = ({ item, onStatusChange, isBeverage }) => {
+const ProductionItem = ({ item, onStatusChange, isBeverage, isDelivery }) => {
   const currentStatusInfo = statusConfig[item.status];
   
   let possibleNextStatus = statusTransitions[item.status] || [];
-  if (isBeverage && item.status === 'Concluído') {
+  
+  // Para Delivery: quando Concluído, só pode ir para c/Entregador
+  if (isDelivery && item.status === 'Concluído') {
+    possibleNextStatus = ['c/Entregador'];
+  }
+  // Para Local: quando Concluído, pode ir para Entregue
+  else if (!isDelivery && item.status === 'Concluído') {
+    possibleNextStatus = ['Entregue'];
+  }
+  // Para bebidas (Local): quando Concluído, pode ir para Entregue
+  if (isBeverage && !isDelivery && item.status === 'Concluído') {
     possibleNextStatus = ['Entregue'];
   }
 
@@ -94,7 +106,15 @@ const Production = () => {
             return { ...item, status };
           })
         }))
-        .filter(order => order.items.some(item => item.status !== 'Entregue'));
+        .filter(order => {
+          // Para pedidos Delivery: não mostrar se todos os itens estão Entregue ou c/Entregador
+          // Para pedidos Local: não mostrar se todos os itens estão Entregue
+          if (order.type === 'Delivery') {
+            return order.items.some(item => item.status !== 'Entregue' && item.status !== 'c/Entregador');
+          } else {
+            return order.items.some(item => item.status !== 'Entregue');
+          }
+        });
       setOrders(productionOrders);
     };
 
@@ -126,7 +146,15 @@ const Production = () => {
               item.itemId === itemId ? { ...item, status: newStatus } : item
             )
           }))
-          .filter(order => order.items.some(item => item.status !== 'Entregue'));
+          .filter(order => {
+            // Para pedidos Delivery: não mostrar se todos os itens estão Entregue ou c/Entregador
+            // Para pedidos Local: não mostrar se todos os itens estão Entregue
+            if (order.type === 'Delivery') {
+              return order.items.some(item => item.status !== 'Entregue' && item.status !== 'c/Entregador');
+            } else {
+              return order.items.some(item => item.status !== 'Entregue');
+            }
+          });
         return updatedOrders;
       });
 
@@ -164,9 +192,23 @@ const Production = () => {
                 </CardHeader>
                 <CardContent className="flex-1 flex flex-col space-y-3 overflow-y-auto min-h-0">
                   {order.items
-                    .filter(item => item.status !== 'Entregue')
+                    .filter(item => {
+                      // Para Delivery: não mostrar itens Entregue ou c/Entregador
+                      // Para Local: não mostrar itens Entregue
+                      if (order.type === 'Delivery') {
+                        return item.status !== 'Entregue' && item.status !== 'c/Entregador';
+                      } else {
+                        return item.status !== 'Entregue';
+                      }
+                    })
                     .map(item => (
-                      <ProductionItem key={item.itemId} item={item} onStatusChange={handleStatusChange} isBeverage={item.categoryId === beverageCategoryId} />
+                      <ProductionItem 
+                        key={item.itemId} 
+                        item={item} 
+                        onStatusChange={handleStatusChange} 
+                        isBeverage={item.categoryId === beverageCategoryId}
+                        isDelivery={order.type === 'Delivery'}
+                      />
                   ))}
                 </CardContent>
               </Card>

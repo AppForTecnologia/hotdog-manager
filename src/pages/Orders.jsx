@@ -68,7 +68,7 @@ const Orders = () => {
     
     let passesFilter = true;
     if (filter === 'today') passesFilter = orderDate === today;
-    if (filter === 'open') passesFilter = !['Entregue', 'Cancelado', 'pending'].includes(order.status);
+    if (filter === 'open') passesFilter = !['Entregue', 'Cancelado', 'Pendente'].includes(order.status);
     if (filter === 'delivery_route') passesFilter = order.status === 'Em rota de entrega';
     if (filter === 'delivered') passesFilter = order.status === 'Entregue';
     if (filter === 'local') passesFilter = order.type === 'Local';
@@ -131,18 +131,6 @@ const Orders = () => {
                 </CardContent>
                 <CardContent className="flex flex-col sm:flex-row gap-2">
                   <Button variant="outline" className="flex-1" onClick={() => openDetails(order)}>Detalhes</Button>
-                  {order.type === 'Delivery' && order.status !== 'Em rota de entrega' && order.status !== 'Entregue' && (
-                    <Button className="flex-1 bg-orange-500 hover:bg-orange-600" onClick={() => handleStatusChange(order.id, 'Em rota de entrega')}>
-                      <Truck className="h-4 w-4 mr-2" />
-                      Entregar
-                    </Button>
-                  )}
-                  {order.type === 'Delivery' && order.status === 'Em rota de entrega' && (
-                    <Button className="flex-1 bg-green-500 hover:bg-green-600" onClick={() => handleStatusChange(order.id, 'Entregue')}>
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                      Finalizar
-                    </Button>
-                  )}
                 </CardContent>
               </Card>
             </motion.div>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Check, X, Receipt, Truck, MapPin, Phone, User } from 'lucide-react';
+import { Check, X, Receipt, Truck, MapPin, Phone, User, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -39,18 +39,38 @@ const DeliveryDriver = () => {
   const [changeMethod, setChangeMethod] = useState('money');
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [filter, setFilter] = useState('all');
+  // Estado para filtro de data - inicializa com a data atual no formato YYYY-MM-DD
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const today = new Date();
+    return { year: today.getFullYear(), month: today.getMonth() };
+  });
 
   /**
    * Carrega os pedidos e clientes do localStorage
    * Atualiza a cada 3 segundos para manter os dados sincronizados
+   * Mostra todos os pedidos de Delivery para o entregador acompanhar todo o processo
    */
   useEffect(() => {
     const fetchData = () => {
       const savedOrders = JSON.parse(localStorage.getItem('orders') || '[]');
       const savedClients = JSON.parse(localStorage.getItem('clients') || '[]');
       
-      // Filtra apenas pedidos de Delivery
-      const deliveryOrders = savedOrders.filter(order => order.type === 'Delivery');
+      // Mostra todos os pedidos de Delivery
+      // Inclui pedidos entregues para que possam aparecer no filtro "Entregues"
+      const deliveryOrders = savedOrders.filter(order => {
+        if (order.type !== 'Delivery') return false;
+        // Mostra todos os pedidos de Delivery (incluindo entregues)
+        // Isso permite que o entregador veja todos os pedidos e use os filtros corretamente
+        return true;
+      });
       setOrders(deliveryOrders);
       setClients(savedClients);
     };
@@ -186,8 +206,47 @@ const DeliveryDriver = () => {
   };
 
   /**
-   * Processa o pagamento do pedido
-   * Salva a venda e atualiza o status do pedido
+   * Atualiza o status dos itens do pedido
+   * 
+   * @param {number} orderId - ID do pedido
+   * @param {string} newStatus - Novo status para os itens
+   */
+  const updateOrderItemsStatus = (orderId, newStatus) => {
+    const allOrders = JSON.parse(localStorage.getItem('orders') || '[]');
+    const updatedOrders = allOrders.map(order => {
+      if (order.id === orderId) {
+        return {
+          ...order,
+          items: order.items.map(item => ({
+            ...item,
+            status: newStatus
+          }))
+        };
+      }
+      return order;
+    });
+    localStorage.setItem('orders', JSON.stringify(updatedOrders));
+    
+    // Atualiza o estado local
+    setOrders(updatedOrders.filter(order => order.type === 'Delivery'));
+  };
+
+  /**
+   * Muda o status do pedido para "Em rota de entrega"
+   * 
+   * @param {number} orderId - ID do pedido
+   */
+  const setOrderInRoute = (orderId) => {
+    updateOrderItemsStatus(orderId, 'Em rota de entrega');
+    toast({ 
+      title: "Pedido em rota!", 
+      description: "O pedido foi marcado como 'Em rota de entrega'." 
+    });
+  };
+
+  /**
+   * Processa o pagamento do pedido e marca como Entregue
+   * Salva a venda e atualiza o status dos itens para Entregue
    */
   const processPayment = () => {
     if (!selectedOrder) return;
@@ -240,23 +299,28 @@ const DeliveryDriver = () => {
       });
     }
 
-    // Atualiza o status do pedido para pago
-    const updatedOrders = orders.map(order => {
+    // Atualiza o status dos itens do pedido para Entregue
+    updateOrderItemsStatus(selectedOrder.id, 'Entregue');
+
+    // Atualiza o status do pedido
+    const allOrders = JSON.parse(localStorage.getItem('orders') || '[]');
+    const updatedOrders = allOrders.map(order => {
       if (order.id === selectedOrder.id) {
         return {
           ...order,
-          status: 'paid',
+          status: 'Entregue',
           paymentStatus: 'paid',
           paidAt: new Date().toISOString()
         };
       }
       return order;
     });
-    saveOrders(updatedOrders);
+    localStorage.setItem('orders', JSON.stringify(updatedOrders));
+    setOrders(updatedOrders.filter(order => order.type === 'Delivery'));
 
     toast({ 
-      title: "Pagamento registrado!", 
-      description: `Pagamento de R$ ${totalToPay.toFixed(2)} registrado com sucesso.` 
+      title: "Pedido entregue!", 
+      description: `Pagamento de R$ ${totalToPay.toFixed(2)} registrado e pedido marcado como entregue.` 
     });
     
     setIsPaymentDialogOpen(false);
@@ -277,16 +341,114 @@ const DeliveryDriver = () => {
   };
 
   /**
-   * Filtra os pedidos de acordo com o filtro selecionado
+   * Verifica se o pedido tem itens com um status específico
+   * 
+   * @param {Object} order - Pedido a verificar
+   * @param {string} status - Status a verificar
+   * @returns {boolean} True se pelo menos um item tem o status
+   */
+  const hasItemWithStatus = (order, status) => {
+    return order.items.some(item => (item.status || 'Pendente') === status);
+  };
+
+  /**
+   * Obtém o status principal do pedido baseado nos itens
+   * 
+   * @param {Object} order - Pedido
+   * @returns {string} Status principal do pedido
+   */
+  const getOrderMainStatus = (order) => {
+    // Se todos os itens estão entregues
+    if (order.items.every(item => (item.status || 'Pendente') === 'Entregue')) {
+      return 'Entregue';
+    }
+    // Se algum item está em rota
+    if (hasItemWithStatus(order, 'Em rota de entrega')) {
+      return 'Em rota de entrega';
+    }
+    // Se algum item está c/Entregador
+    if (hasItemWithStatus(order, 'c/Entregador')) {
+      return 'c/Entregador';
+    }
+    // Se algum item está concluído
+    if (hasItemWithStatus(order, 'Concluído')) {
+      return 'Concluído';
+    }
+    // Se algum item está em produção
+    if (hasItemWithStatus(order, 'Em Produção')) {
+      return 'Em Produção';
+    }
+    // Se algum item está pendente
+    if (hasItemWithStatus(order, 'Pendente')) {
+      return 'Pendente';
+    }
+    return order.status || 'Pendente';
+  };
+
+  /**
+   * Verifica se um pedido foi criado na data selecionada
+   * 
+   * @param {Object} order - Pedido a verificar
+   * @param {string} date - Data no formato YYYY-MM-DD
+   * @returns {boolean} True se o pedido foi criado na data
+   */
+  const isOrderOnDate = (order, date) => {
+    if (!order.createdAt) return false;
+    
+    try {
+      // Converte a data do pedido para string no formato YYYY-MM-DD
+      const orderDate = new Date(order.createdAt);
+      
+      // Usa getFullYear, getMonth, getDate para evitar problemas de timezone
+      const orderYear = orderDate.getFullYear();
+      const orderMonth = String(orderDate.getMonth() + 1).padStart(2, '0');
+      const orderDay = String(orderDate.getDate()).padStart(2, '0');
+      const orderDateStr = `${orderYear}-${orderMonth}-${orderDay}`;
+      
+      // Compara as strings de data (formato YYYY-MM-DD)
+      return orderDateStr === date;
+    } catch (error) {
+      console.error('Erro ao comparar datas:', error);
+      return false;
+    }
+  };
+
+  /**
+   * Filtra os pedidos de acordo com o filtro selecionado e a data
    * 
    * @returns {Array} Array de pedidos filtrados
    */
   const filteredOrders = orders.filter(order => {
-    if (filter === 'all') return true;
-    if (filter === 'pending') return order.status === 'pending' || !order.status;
-    if (filter === 'in_route') return order.status === 'Em rota de entrega';
-    if (filter === 'delivered') return order.status === 'Entregue';
-    if (filter === 'paid') return order.paymentStatus === 'paid' || order.status === 'paid';
+    // Primeiro filtra por data
+    if (!isOrderOnDate(order, selectedDate)) {
+      return false;
+    }
+    
+    const mainStatus = getOrderMainStatus(order);
+    const isPaid = order.paymentStatus === 'paid';
+    
+    if (filter === 'all') {
+      // Mostra todos os pedidos de Delivery da data selecionada
+      return true;
+    }
+    if (filter === 'pending') {
+      // Pendentes: pedidos que ainda não estão em rota nem entregues
+      // Inclui: Pendente, Em Produção, Concluído, c/Entregador
+      return mainStatus !== 'Em rota de entrega' && mainStatus !== 'Entregue';
+    }
+    if (filter === 'in_route') {
+      // Em Rota: pedidos com status "Em rota de entrega"
+      return mainStatus === 'Em rota de entrega';
+    }
+    if (filter === 'delivered') {
+      // Entregues: pedidos com status "Entregue"
+      return mainStatus === 'Entregue';
+    }
+    if (filter === 'paid') {
+      // Pagos: pedidos que foram pagos (independente do status de entrega)
+      // Verifica tanto paymentStatus quanto se foi pago na venda
+      return isPaid || order.paymentOption === 'paid';
+    }
     return true;
   });
 
@@ -309,20 +471,49 @@ const DeliveryDriver = () => {
         </div>
       </motion.div>
 
-      <Tabs value={filter} onValueChange={setFilter}>
-        <TabsList className="grid w-full grid-cols-4 sm:grid-cols-5">
-          <TabsTrigger value="all">Todos</TabsTrigger>
-          <TabsTrigger value="pending">Pendentes</TabsTrigger>
-          <TabsTrigger value="in_route">Em Rota</TabsTrigger>
-          <TabsTrigger value="delivered">Entregues</TabsTrigger>
-          <TabsTrigger value="paid">Pagos</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+        <div className="flex items-center gap-2">
+          <Calendar className="h-4 w-4 text-muted-foreground" />
+          <Label htmlFor="date-filter" className="text-foreground font-medium">
+            Data:
+          </Label>
+          <Button
+            variant="outline"
+            onClick={() => {
+              // Atualiza o mês do calendário para o mês da data selecionada
+              const date = new Date(selectedDate + 'T00:00:00');
+              setCalendarMonth({ year: date.getFullYear(), month: date.getMonth() });
+              setIsCalendarOpen(true);
+            }}
+            className="w-auto min-w-[140px] justify-start"
+          >
+            <Calendar className="h-4 w-4 mr-2" />
+            {new Date(selectedDate + 'T00:00:00').toLocaleDateString('pt-BR', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric'
+            })}
+          </Button>
+        </div>
+        <Tabs value={filter} onValueChange={setFilter} className="flex-1">
+          <TabsList className="grid w-full grid-cols-4 sm:grid-cols-5">
+            <TabsTrigger value="all">Todos</TabsTrigger>
+            <TabsTrigger value="pending">Pendentes</TabsTrigger>
+            <TabsTrigger value="in_route">Em Rota</TabsTrigger>
+            <TabsTrigger value="delivered">Entregues</TabsTrigger>
+            <TabsTrigger value="paid">Pagos</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredOrders.map((order, index) => {
           const client = order.clientId ? getClientInfo(order.clientId) : null;
           const isPaid = order.paymentStatus === 'paid' || order.status === 'paid';
+          const mainStatus = getOrderMainStatus(order);
+          const isWithDriver = hasItemWithStatus(order, 'c/Entregador');
+          const isInRoute = hasItemWithStatus(order, 'Em rota de entrega');
+          const isDelivered = mainStatus === 'Entregue';
           
           return (
             <motion.div 
@@ -344,10 +535,13 @@ const DeliveryDriver = () => {
                   </CardTitle>
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">
-                      Status: <span className="font-semibold text-foreground">{order.status || 'Pendente'}</span>
+                      Status: <span className="font-semibold text-foreground">{mainStatus}</span>
                     </p>
-                    {isPaid && (
+                    {isPaid && !isDelivered && (
                       <p className="text-sm text-green-400 font-semibold">✓ Pagamento Registrado</p>
+                    )}
+                    {isDelivered && (
+                      <p className="text-sm text-green-400 font-semibold">✓ Entregue</p>
                     )}
                   </div>
                 </CardHeader>
@@ -391,18 +585,62 @@ const DeliveryDriver = () => {
                   </div>
                 </CardContent>
                 <CardContent className="flex flex-col gap-2">
-                  {!isPaid && (
+                  {isWithDriver && !isInRoute && !isDelivered && (
+                    <Button 
+                      className="w-full bg-purple-500 hover:bg-purple-600" 
+                      onClick={() => setOrderInRoute(order.id)}
+                    >
+                      <Truck className="h-4 w-4 mr-2" />
+                      Iniciar Entrega
+                    </Button>
+                  )}
+                  {isInRoute && !isDelivered && (order.paymentOption === 'on_delivery' || !order.paymentOption) && (
                     <Button 
                       className="w-full bg-orange-500 hover:bg-orange-600" 
                       onClick={() => openPaymentDialog(order)}
                     >
                       <Receipt className="h-4 w-4 mr-2" />
-                      Registrar Pagamento
+                      Registrar Pagamento e Entregar
                     </Button>
                   )}
-                  {isPaid && (
+                  {isInRoute && !isDelivered && order.paymentOption === 'paid' && (
+                    <Button 
+                      className="w-full bg-green-500 hover:bg-green-600" 
+                      onClick={() => {
+                        // Marca como entregue sem precisar registrar pagamento
+                        updateOrderItemsStatus(order.id, 'Entregue');
+                        const allOrders = JSON.parse(localStorage.getItem('orders') || '[]');
+                        const updatedOrders = allOrders.map(o => {
+                          if (o.id === order.id) {
+                            return {
+                              ...o,
+                              status: 'Entregue'
+                            };
+                          }
+                          return o;
+                        });
+                        localStorage.setItem('orders', JSON.stringify(updatedOrders));
+                        setOrders(updatedOrders.filter(o => o.type === 'Delivery'));
+                        toast({ 
+                          title: "Pedido entregue!", 
+                          description: "Pedido marcado como entregue." 
+                        });
+                      }}
+                    >
+                      <Check className="h-4 w-4 mr-2" />
+                      Finalizar Entrega
+                    </Button>
+                  )}
+                  {isDelivered && (
                     <div className="w-full p-3 rounded-lg bg-green-500/20 text-green-400 text-center font-semibold">
-                      Pagamento já registrado
+                      ✓ Pedido Entregue
+                    </div>
+                  )}
+                  {!isWithDriver && !isInRoute && !isDelivered && (
+                    <div className="w-full p-3 rounded-lg bg-blue-500/20 text-blue-400 text-center font-semibold text-sm">
+                      {mainStatus === 'Pendente' && 'Aguardando início da produção'}
+                      {mainStatus === 'Em Produção' && 'Em produção'}
+                      {mainStatus === 'Concluído' && 'Aguardando entregador'}
                     </div>
                   )}
                 </CardContent>
@@ -587,6 +825,157 @@ const DeliveryDriver = () => {
               </Card>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog do Calendário Visual */}
+      <Dialog open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+        <DialogContent className="glass-effect max-w-sm p-0">
+          <DialogHeader className="px-6 pt-6 pb-4">
+            <DialogTitle className="text-foreground">Selecionar Data</DialogTitle>
+          </DialogHeader>
+          <div className="px-6 pb-6">
+            {/* Navegação do Mês */}
+            <div className="flex items-center justify-between mb-4">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setCalendarMonth(prev => {
+                    const newDate = new Date(prev.year, prev.month - 1, 1);
+                    return { year: newDate.getFullYear(), month: newDate.getMonth() };
+                  });
+                }}
+                className="h-8 w-8"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <h3 className="text-lg font-semibold text-foreground">
+                {new Date(calendarMonth.year, calendarMonth.month).toLocaleDateString('pt-BR', {
+                  month: 'long',
+                  year: 'numeric'
+                }).replace(/^\w/, c => c.toUpperCase())}
+              </h3>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  setCalendarMonth(prev => {
+                    const newDate = new Date(prev.year, prev.month + 1, 1);
+                    return { year: newDate.getFullYear(), month: newDate.getMonth() };
+                  });
+                }}
+                className="h-8 w-8"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {/* Dias da Semana */}
+            <div className="grid grid-cols-7 gap-1 mb-2">
+              {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(day => (
+                <div key={day} className="text-center text-sm font-medium text-muted-foreground py-2">
+                  {day}
+                </div>
+              ))}
+            </div>
+
+            {/* Grid de Dias */}
+            <div className="grid grid-cols-7 gap-1">
+              {(() => {
+                const firstDay = new Date(calendarMonth.year, calendarMonth.month, 1);
+                const lastDay = new Date(calendarMonth.year, calendarMonth.month + 1, 0);
+                const daysInMonth = lastDay.getDate();
+                const startingDayOfWeek = firstDay.getDay();
+                const days = [];
+
+                // Dias do mês anterior
+                const prevMonth = new Date(calendarMonth.year, calendarMonth.month, 0);
+                const daysInPrevMonth = prevMonth.getDate();
+                for (let i = startingDayOfWeek - 1; i >= 0; i--) {
+                  const day = daysInPrevMonth - i;
+                  days.push({
+                    day,
+                    isCurrentMonth: false,
+                    date: `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                  });
+                }
+
+                // Dias do mês atual
+                for (let day = 1; day <= daysInMonth; day++) {
+                  const dateStr = `${calendarMonth.year}-${String(calendarMonth.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                  days.push({
+                    day,
+                    isCurrentMonth: true,
+                    date: dateStr
+                  });
+                }
+
+                // Dias do próximo mês para completar a grade
+                const remainingDays = 42 - days.length; // 6 semanas * 7 dias
+                const nextMonth = new Date(calendarMonth.year, calendarMonth.month + 1, 1);
+                for (let day = 1; day <= remainingDays; day++) {
+                  days.push({
+                    day,
+                    isCurrentMonth: false,
+                    date: `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                  });
+                }
+
+                return days.map(({ day, isCurrentMonth, date }, index) => {
+                  const isSelected = date === selectedDate;
+                  const isToday = date === (() => {
+                    const today = new Date();
+                    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+                  })();
+
+                  return (
+                    <button
+                      key={index}
+                      onClick={() => {
+                        if (isCurrentMonth) {
+                          setSelectedDate(date);
+                          setIsCalendarOpen(false);
+                        }
+                      }}
+                      className={`
+                        h-10 w-10 rounded-lg text-sm font-medium transition-all
+                        ${!isCurrentMonth ? 'text-muted-foreground/30 cursor-not-allowed' : 'cursor-pointer hover:bg-accent'}
+                        ${isSelected && isCurrentMonth ? 'bg-primary text-primary-foreground font-bold' : ''}
+                        ${isToday && !isSelected && isCurrentMonth ? 'ring-2 ring-primary/50 bg-primary/10' : ''}
+                        ${!isSelected && !isToday && isCurrentMonth ? 'text-foreground hover:bg-accent' : ''}
+                      `}
+                      disabled={!isCurrentMonth}
+                    >
+                      {day}
+                    </button>
+                  );
+                });
+              })()}
+            </div>
+
+            {/* Botões de ação */}
+            <div className="flex justify-between gap-2 mt-4 pt-4 border-t border-border">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const today = new Date();
+                  const year = today.getFullYear();
+                  const month = String(today.getMonth() + 1).padStart(2, '0');
+                  const day = String(today.getDate()).padStart(2, '0');
+                  setSelectedDate(`${year}-${month}-${day}`);
+                  setCalendarMonth({ year: today.getFullYear(), month: today.getMonth() });
+                  setIsCalendarOpen(false);
+                }}
+                className="flex-1"
+              >
+                Hoje
+              </Button>
+              <Button variant="outline" onClick={() => setIsCalendarOpen(false)} className="flex-1">
+                Fechar
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
