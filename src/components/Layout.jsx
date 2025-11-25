@@ -12,7 +12,8 @@ import {
   ChefHat,
   Users,
   Truck,
-  DollarSign
+  DollarSign,
+  Bike
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -52,6 +53,7 @@ const Layout = ({ children }) => {
     { name: 'Dashboard', href: '/', icon: Home },
     { name: 'Vendas', href: '/sales', icon: DollarSign },
     { name: 'Pedidos', href: '/orders', icon: Truck },
+    { name: 'Entregadores', href: '/delivery-driver', icon: Bike },
     { name: 'Produção', href: '/production', icon: ChefHat },
     { name: 'Produtos', href: '/products', icon: Package },
     { name: 'Clientes', href: '/clients', icon: Users },

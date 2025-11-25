@@ -13,6 +13,7 @@ import Reports from '@/pages/Reports';
 import Production from '@/pages/Production';
 import Clients from '@/pages/Clients';
 import Orders from '@/pages/Orders';
+import DeliveryDriver from '@/pages/DeliveryDriver';
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
             <Route path="/payment" element={<Payment />} />
             <Route path="/cash-register" element={<CashRegister />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/delivery-driver" element={<DeliveryDriver />} />
           </Routes>
         </Layout>
         <Toaster />

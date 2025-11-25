@@ -35,23 +35,23 @@ const ProductionItem = ({ item, onStatusChange, isBeverage }) => {
 
   return (
     <motion.div layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.8 }} className={cn("p-4 rounded-lg border", currentStatusInfo.color)}>
-      <div className="flex justify-between items-start">
-        <div className="flex-1">
-          <p className="font-bold text-foreground">{item.quantity}x {item.name}</p>
-          {item.notes && <p className="text-sm text-muted-foreground">Obs: {item.notes}</p>}
+      <div className="flex items-start mb-3 gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="font-bold text-sm text-foreground break-words">{item.quantity}x {item.name}</p>
+          {item.notes && <p className="text-xs text-muted-foreground break-words">Obs: {item.notes}</p>}
         </div>
-        <div className={`flex items-center space-x-2 text-sm font-semibold px-3 py-1 rounded-full ${currentStatusInfo.color}`}>
-          <currentStatusInfo.icon className="h-4 w-4" />
-          <span>{item.status}</span>
+        <div className={`flex items-center space-x-1 text-xs font-semibold px-2 py-1 rounded-full shrink-0 ${currentStatusInfo.color}`}>
+          <currentStatusInfo.icon className="h-3 w-3" />
+          <span className="whitespace-nowrap">{item.status}</span>
         </div>
       </div>
       {possibleNextStatus.length > 0 && (
-        <div className="mt-3 flex flex-col space-y-2">
+        <div className="flex flex-col space-y-2">
           {possibleNextStatus.map(status => {
             const nextStatusInfo = statusConfig[status];
             return (
-              <Button key={status} onClick={() => handleStatusChange(status)} className={`w-full ${nextStatusInfo.bgColor} text-white hover:opacity-90`}>
-                <nextStatusInfo.icon className="h-4 w-4 mr-2" />
+              <Button key={status} onClick={() => handleStatusChange(status)} className={`w-full ${nextStatusInfo.bgColor} text-white hover:opacity-90 text-xs`}>
+                <nextStatusInfo.icon className="h-3 w-3 mr-1" />
                 Mover para "{status}"
               </Button>
             )
@@ -86,7 +86,7 @@ const Production = () => {
         .map(order => ({
           ...order,
           items: order.items.map(item => {
-            const isBeverage = item.categoryId === beverageCategoryId;
+            const isBeverage = beverageCategoryId && item.categoryId === beverageCategoryId;
             let status = item.status || 'Pendente';
             if (isBeverage && !item.status) {
               status = 'Concluído';
@@ -135,7 +135,7 @@ const Production = () => {
   };
 
   const filteredOrders = orders.filter(order =>
-    order.tableNumber.toLowerCase().includes(searchTerm.toLowerCase())
+    (order.tableNumber || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -155,14 +155,14 @@ const Production = () => {
         {filteredOrders.length > 0 ? (
           filteredOrders.map((order, index) => (
             <motion.div key={order.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.1 }}>
-              <Card className="glass-effect h-full flex flex-col">
+              <Card className="glass-effect h-full flex flex-col overflow-hidden">
                 <CardHeader>
                   <CardTitle className="text-foreground flex justify-between items-center">
-                    <span>{order.tableNumber}</span>
+                    <span>{order.tableNumber || `Delivery #${order.id.toString().slice(-4)}`}</span>
                     <span className="text-sm text-muted-foreground">{new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="flex-1 flex flex-col space-y-3">
+                <CardContent className="flex-1 flex flex-col space-y-3 overflow-y-auto min-h-0">
                   {order.items
                     .filter(item => item.status !== 'Entregue')
                     .map(item => (

@@ -11,8 +11,8 @@ import { toast } from '@/components/ui/use-toast';
 
 const paymentMethodConfig = {
   money: { name: 'Dinheiro' },
-  credit: { name: 'Cartão de Crédito' },
-  debit: { name: 'Cartão de Débito' },
+  credit: { name: 'Crédito' },
+  debit: { name: 'Débito' },
   pix: { name: 'PIX' },
   meal_voucher: { name: 'VR/VA' },
 };
