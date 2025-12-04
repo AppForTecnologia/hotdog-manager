@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/use-toast';
+import { jsPDF } from "jspdf";
+import { FileText } from 'lucide-react'; // ícone do botão de PDF
 
 /**
  * Configuração dos métodos de pagamento disponíveis
@@ -62,7 +64,7 @@ const DeliveryDriver = () => {
     const fetchData = () => {
       const savedOrders = JSON.parse(localStorage.getItem('orders') || '[]');
       const savedClients = JSON.parse(localStorage.getItem('clients') || '[]');
-      
+
       // Mostra todos os pedidos de Delivery
       // Inclui pedidos entregues para que possam aparecer no filtro "Entregues"
       const deliveryOrders = savedOrders.filter(order => {
@@ -74,7 +76,7 @@ const DeliveryDriver = () => {
       setOrders(deliveryOrders);
       setClients(savedClients);
     };
-    
+
     fetchData();
     const interval = setInterval(fetchData, 3000);
     return () => clearInterval(interval);
@@ -91,14 +93,14 @@ const DeliveryDriver = () => {
       const updatedOrder = newOrders.find(o => o.id === order.id);
       return updatedOrder || order;
     });
-    
+
     // Adiciona novos pedidos que não estavam na lista completa
     newOrders.forEach(newOrder => {
       if (!updatedAllOrders.some(o => o.id === newOrder.id)) {
         updatedAllOrders.push(newOrder);
       }
     });
-    
+
     localStorage.setItem('orders', JSON.stringify(updatedAllOrders));
     setOrders(newOrders.filter(order => order.type === 'Delivery'));
   };
@@ -226,7 +228,7 @@ const DeliveryDriver = () => {
       return order;
     });
     localStorage.setItem('orders', JSON.stringify(updatedOrders));
-    
+
     // Atualiza o estado local
     setOrders(updatedOrders.filter(order => order.type === 'Delivery'));
   };
@@ -238,9 +240,9 @@ const DeliveryDriver = () => {
    */
   const setOrderInRoute = (orderId) => {
     updateOrderItemsStatus(orderId, 'Em rota de entrega');
-    toast({ 
-      title: "Pedido em rota!", 
-      description: "O pedido foi marcado como 'Em rota de entrega'." 
+    toast({
+      title: "Pedido em rota!",
+      description: "O pedido foi marcado como 'Em rota de entrega'."
     });
   };
 
@@ -250,12 +252,12 @@ const DeliveryDriver = () => {
    */
   const processPayment = () => {
     if (!selectedOrder) return;
-    
+
     if (paymentMethods.length === 0) {
       toast({ title: "Erro", description: "Adicione pelo menos uma forma de pagamento!", variant: "destructive" });
       return;
     }
-    
+
     const totalToPay = getOrderTotal();
     const totalPaidByCustomer = parseFloat(paidAmount) || 0;
 
@@ -318,11 +320,11 @@ const DeliveryDriver = () => {
     localStorage.setItem('orders', JSON.stringify(updatedOrders));
     setOrders(updatedOrders.filter(order => order.type === 'Delivery'));
 
-    toast({ 
-      title: "Pedido entregue!", 
-      description: `Pagamento de R$ ${totalToPay.toFixed(2)} registrado e pedido marcado como entregue.` 
+    toast({
+      title: "Pedido entregue!",
+      description: `Pagamento de R$ ${totalToPay.toFixed(2)} registrado e pedido marcado como entregue.`
     });
-    
+
     setIsPaymentDialogOpen(false);
     setSelectedOrder(null);
     setPaymentMethods([]);
@@ -347,6 +349,103 @@ const DeliveryDriver = () => {
    * @param {string} status - Status a verificar
    * @returns {boolean} True se pelo menos um item tem o status
    */
+  const generateDeliveryPdf = (order, statusLabel) => {
+    const doc = new jsPDF({
+      unit: "mm",
+      format: [80, 200],
+    });
+
+    const client = order.clientId ? getClientInfo(order.clientId) : null;
+    const createdAt = new Date(order.createdAt);
+
+    let y = 8;
+
+    // TÍTULO
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text(`Delivery #${order.id}`, 4, y);
+
+    const hora = createdAt.toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    doc.setFont("helvetica", "normal");
+    doc.text(hora, 76, y, { align: "right" });
+
+    // Status
+    y += 6;
+    doc.setFontSize(9);
+    doc.text(`Status: ${statusLabel}`, 4, y);
+
+    // CLIENTE
+    y += 5;
+    if (client?.name) {
+      doc.text(`Cliente: ${client.name}`, 4, y);
+      y += 4;
+    }
+
+    if (client?.phone) {
+      doc.text(`Tel: ${client.phone}`, 4, y);
+      y += 4;
+    }
+
+    // ENDEREÇO (com quebra de linha)
+    if (order.deliveryAddress) {
+      const addrLines = doc.splitTextToSize(`Endereço: ${order.deliveryAddress}`, 72);
+      addrLines.forEach((line) => {
+        doc.text(line, 4, y);
+        y += 4;
+      });
+    }
+
+    // Separador
+    y += 4;
+    doc.text("----------------------------------------", 4, y);
+    y += 4;
+
+    // ITENS
+    doc.setFont("helvetica", "bold");
+    doc.text("Itens:", 4, y);
+    y += 5;
+
+    doc.setFont("helvetica", "normal");
+
+    (order.items || []).forEach((item) => {
+      const line = `${item.quantity}x ${item.name} - R$ ${(item.price * item.quantity).toFixed(2)}`;
+      const wrapped = doc.splitTextToSize(line, 72);
+      wrapped.forEach((l) => {
+        doc.text(l, 4, y);
+        y += 4;
+      });
+    });
+
+    // Separador
+    y += 4;
+    doc.text("----------------------------------------", 4, y);
+    y += 4;
+
+    // TOTAL
+    const total =
+      order.total ??
+      order.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+    doc.setFont("helvetica", "bold");
+    doc.text(`Total: R$ ${total.toFixed(2)}`, 4, y);
+    y += 5;
+
+    // PAGAMENTO (PAGO / NÃO PAGO)
+    const isPaid = order.isPaid === true || order.paymentOption === "paid";
+    const paymentText = isPaid ? "PAGO" : "PAGAR NA ENTREGA";
+
+    doc.setFont("helvetica", "normal");
+    doc.text(`Pagamento: ${paymentText}`, 4, y);
+    y += 6;
+
+    // FINALIZAÇÃO — sem assinatura
+    // PDF pronto
+    doc.save(`delivery_${order.id}.pdf`);
+  };
+
   const hasItemWithStatus = (order, status) => {
     return order.items.some(item => (item.status || 'Pendente') === status);
   };
@@ -394,17 +493,17 @@ const DeliveryDriver = () => {
    */
   const isOrderOnDate = (order, date) => {
     if (!order.createdAt) return false;
-    
+
     try {
       // Converte a data do pedido para string no formato YYYY-MM-DD
       const orderDate = new Date(order.createdAt);
-      
+
       // Usa getFullYear, getMonth, getDate para evitar problemas de timezone
       const orderYear = orderDate.getFullYear();
       const orderMonth = String(orderDate.getMonth() + 1).padStart(2, '0');
       const orderDay = String(orderDate.getDate()).padStart(2, '0');
       const orderDateStr = `${orderYear}-${orderMonth}-${orderDay}`;
-      
+
       // Compara as strings de data (formato YYYY-MM-DD)
       return orderDateStr === date;
     } catch (error) {
@@ -423,10 +522,10 @@ const DeliveryDriver = () => {
     if (!isOrderOnDate(order, selectedDate)) {
       return false;
     }
-    
+
     const mainStatus = getOrderMainStatus(order);
     const isPaid = order.paymentStatus === 'paid';
-    
+
     if (filter === 'all') {
       // Mostra todos os pedidos de Delivery da data selecionada
       return true;
@@ -457,9 +556,9 @@ const DeliveryDriver = () => {
 
   return (
     <div className="space-y-6">
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }} 
-        animate={{ opacity: 1, y: 0 }} 
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
         className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
       >
         <div>
@@ -514,12 +613,12 @@ const DeliveryDriver = () => {
           const isWithDriver = hasItemWithStatus(order, 'c/Entregador');
           const isInRoute = hasItemWithStatus(order, 'Em rota de entrega');
           const isDelivered = mainStatus === 'Entregue';
-          
+
           return (
-            <motion.div 
-              key={order.id} 
-              initial={{ opacity: 0, y: 20 }} 
-              animate={{ opacity: 1, y: 0 }} 
+            <motion.div
+              key={order.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
             >
               <Card className="glass-effect h-full flex flex-col">
@@ -586,8 +685,8 @@ const DeliveryDriver = () => {
                 </CardContent>
                 <CardContent className="flex flex-col gap-2">
                   {isWithDriver && !isInRoute && !isDelivered && (
-                    <Button 
-                      className="w-full bg-purple-500 hover:bg-purple-600" 
+                    <Button
+                      className="w-full bg-purple-500 hover:bg-purple-600"
                       onClick={() => setOrderInRoute(order.id)}
                     >
                       <Truck className="h-4 w-4 mr-2" />
@@ -595,8 +694,8 @@ const DeliveryDriver = () => {
                     </Button>
                   )}
                   {isInRoute && !isDelivered && (order.paymentOption === 'on_delivery' || !order.paymentOption) && (
-                    <Button 
-                      className="w-full bg-orange-500 hover:bg-orange-600" 
+                    <Button
+                      className="w-full bg-orange-500 hover:bg-orange-600"
                       onClick={() => openPaymentDialog(order)}
                     >
                       <Receipt className="h-4 w-4 mr-2" />
@@ -604,8 +703,8 @@ const DeliveryDriver = () => {
                     </Button>
                   )}
                   {isInRoute && !isDelivered && order.paymentOption === 'paid' && (
-                    <Button 
-                      className="w-full bg-green-500 hover:bg-green-600" 
+                    <Button
+                      className="w-full bg-green-500 hover:bg-green-600"
                       onClick={() => {
                         // Marca como entregue sem precisar registrar pagamento
                         updateOrderItemsStatus(order.id, 'Entregue');
@@ -621,9 +720,9 @@ const DeliveryDriver = () => {
                         });
                         localStorage.setItem('orders', JSON.stringify(updatedOrders));
                         setOrders(updatedOrders.filter(o => o.type === 'Delivery'));
-                        toast({ 
-                          title: "Pedido entregue!", 
-                          description: "Pedido marcado como entregue." 
+                        toast({
+                          title: "Pedido entregue!",
+                          description: "Pedido marcado como entregue."
                         });
                       }}
                     >
@@ -631,6 +730,18 @@ const DeliveryDriver = () => {
                       Finalizar Entrega
                     </Button>
                   )}
+                  {order.type === "Delivery" && (
+                    <Button
+                      variant="outline"
+                      className="w-full mt-2"
+                      onClick={() => generateDeliveryPdf(order, mainStatus)}
+                    >
+                      <FileText className="h-4 w-4 mr-2" />
+                      Gerar PDF da Entrega
+                    </Button>
+                  )}
+
+
                   {isDelivered && (
                     <div className="w-full p-3 rounded-lg bg-green-500/20 text-green-400 text-center font-semibold">
                       ✓ Pedido Entregue
@@ -652,9 +763,9 @@ const DeliveryDriver = () => {
 
       {filteredOrders.length === 0 && (
         <div className="col-span-full text-center py-16">
-          <motion.div 
-            initial={{ scale: 0.8, opacity: 0 }} 
-            animate={{ scale: 1, opacity: 1 }} 
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
             transition={{ delay: 0.2 }}
           >
             <Truck className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
@@ -728,9 +839,9 @@ const DeliveryDriver = () => {
                   <Tabs value={currentPayment.method} onValueChange={(value) => setCurrentPayment({ ...currentPayment, method: value })}>
                     <TabsList className="grid w-full grid-cols-4 bg-accent">
                       {Object.entries(paymentMethodConfig).map(([key, { name }]) => (
-                        <TabsTrigger 
-                          key={key} 
-                          value={key} 
+                        <TabsTrigger
+                          key={key}
+                          value={key}
                           className="text-muted-foreground data-[state=active]:text-foreground flex flex-col h-auto py-2 gap-1"
                         >
                           <span className="text-xs">{name}</span>
@@ -739,12 +850,12 @@ const DeliveryDriver = () => {
                     </TabsList>
                   </Tabs>
                   <div className="flex gap-2">
-                    <Input 
-                      type="number" 
-                      step="0.01" 
-                      value={currentPayment.amount} 
-                      onChange={(e) => setCurrentPayment({ ...currentPayment, amount: e.target.value })} 
-                      placeholder="Valor" 
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={currentPayment.amount}
+                      onChange={(e) => setCurrentPayment({ ...currentPayment, amount: e.target.value })}
+                      placeholder="Valor"
                     />
                     <Button onClick={addPaymentMethod} className="btn-gradient">Adicionar</Button>
                   </div>
@@ -758,10 +869,10 @@ const DeliveryDriver = () => {
                             <span className="text-foreground">{config.name}</span>
                             <div className="flex items-center space-x-2">
                               <span className="text-green-400 font-bold">R$ {payment.amount.toFixed(2)}</span>
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                onClick={() => removePaymentMethod(payment.id)} 
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removePaymentMethod(payment.id)}
                                 className="text-red-400 hover:bg-red-500/10 p-1"
                               >
                                 <X className="h-4 w-4" />
@@ -779,13 +890,13 @@ const DeliveryDriver = () => {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="paidAmount" className="text-foreground">Valor Recebido do Cliente</Label>
-                      <Input 
-                        id="paidAmount" 
-                        type="number" 
-                        step="0.01" 
-                        value={paidAmount} 
-                        onChange={(e) => setPaidAmount(e.target.value)} 
-                        placeholder="Ex: 50.00" 
+                      <Input
+                        id="paidAmount"
+                        type="number"
+                        step="0.01"
+                        value={paidAmount}
+                        onChange={(e) => setPaidAmount(e.target.value)}
+                        placeholder="Ex: 50.00"
                       />
                     </div>
                     {getChange() > 0 && (
@@ -799,9 +910,9 @@ const DeliveryDriver = () => {
                           <Tabs value={changeMethod} onValueChange={setChangeMethod}>
                             <TabsList className="grid w-full grid-cols-4 bg-accent">
                               {Object.entries(paymentMethodConfig).map(([key, { name }]) => (
-                                <TabsTrigger 
-                                  key={key} 
-                                  value={key} 
+                                <TabsTrigger
+                                  key={key}
+                                  value={key}
                                   className="text-muted-foreground data-[state=active]:text-foreground flex flex-col h-auto py-2 gap-1"
                                 >
                                   <span className="text-xs">{name}</span>
@@ -813,9 +924,9 @@ const DeliveryDriver = () => {
                       </>
                     )}
                   </div>
-                  <Button 
-                    onClick={processPayment} 
-                    disabled={!isPaymentReady} 
+                  <Button
+                    onClick={processPayment}
+                    disabled={!isPaymentReady}
                     className="w-full btn-gradient text-lg h-12"
                   >
                     <Check className="h-5 w-5 mr-2" />
